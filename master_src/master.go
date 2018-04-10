@@ -1,27 +1,46 @@
 package master
 
 import (
-	"fmt"
-	"github.com/GoodDeeds/load-balancer/common/utility"
 	"net"
-	"os"
 	"sync"
+
+	"github.com/GoodDeeds/load-balancer/common/logger"
+	"github.com/GoodDeeds/load-balancer/common/utility"
+	"github.com/op/go-logging"
 )
 
+// Master is used to store info of master node which is currently running
 type Master struct {
 	myIP        net.IP
 	broadcastIP net.IP
-
-	// Should acquire this lock before accessing slave.
-	// Acquire Write Lock only when removing or adding a slave.
-	// Read Lock in other cases (modifying or accessing individual slaves)
-	slavesMtx sync.RWMutex
-
-	slaves []Slave
-
-	close chan struct{}
+	slavePool   SlavePool
+	close       chan struct{}
+	Logger      *logging.Logger
 }
 
+func (m *Master) Run() {
+	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
+	m.updateAddress()
+	m.connect()
+}
+
+func (m *Master) updateAddress() {
+	ipnet, err := utility.GetMyIP()
+	if err != nil {
+		m.Logger.Fatal(logger.FormatLogMessage("msg", "Failed to get IP", "err", err.Error()))
+	}
+
+	m.myIP = ipnet.IP
+	for i, b := range ipnet.Mask {
+		m.broadcastIP = append(m.broadcastIP, (m.myIP[i] | (^b)))
+	}
+}
+
+func (m *Master) Close() {
+	close(m.close)
+}
+
+// Slave is used to store info of slave node connected to it
 type Slave struct {
 	ip string
 
@@ -29,25 +48,7 @@ type Slave struct {
 	mtx sync.RWMutex
 }
 
-func (m *Master) Run() {
-	fmt.Println("Master running")
-	m.updateAddress()
-	m.connect()
-}
-
-func (m *Master) updateAddress() {
-
-	ipnet, err := utility.GetMyIP()
-
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal error ", err.Error())
-		os.Exit(1)
-	}
-
-	m.myIP = ipnet.IP
-
-	for i, b := range ipnet.Mask {
-		m.broadcastIP = append(m.broadcastIP, (m.myIP[i] | (^b)))
-	}
-
+type SlavePool struct {
+	mtx    sync.RWMutex
+	slaves []*Slave
 }

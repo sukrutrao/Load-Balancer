@@ -3,27 +3,33 @@ package master
 import (
 	"bytes"
 	"encoding/gob"
-	"fmt"
-	"github.com/GoodDeeds/load-balancer/common/constants"
-	"github.com/GoodDeeds/load-balancer/common/packets"
 	"net"
-	"os"
 	"strconv"
 	"time"
+
+	"github.com/GoodDeeds/load-balancer/common/constants"
+	"github.com/GoodDeeds/load-balancer/common/logger"
+	"github.com/GoodDeeds/load-balancer/common/packets"
+	"github.com/GoodDeeds/load-balancer/common/utility"
 )
 
 func (m *Master) connect() {
 	service := constants.BroadcastReceiveAddress.String() + ":" + strconv.Itoa(int(constants.MasterBroadcastPort))
+
 	udpAddr, err := net.ResolveUDPAddr("udp4", service)
-	checkError(err)
+	utility.CheckFatal(err, m.Logger)
+
 	conn, err := net.ListenUDP("udp", udpAddr)
-	checkError(err)
+	utility.CheckFatal(err, m.Logger)
+
 	for {
-		handleClient(conn)
+		// TODO: add timeout and check if master is closed.
+		m.handleClient(conn)
 	}
 }
 
-func handleClient(conn *net.UDPConn) {
+// TODO: add slave to slavePool.
+func (m *Master) handleClient(conn *net.UDPConn) {
 	var buf [1024]byte
 	n, addr, err := conn.ReadFromUDP(buf[0:])
 
@@ -31,32 +37,29 @@ func handleClient(conn *net.UDPConn) {
 
 	switch int8(packetType) {
 	case constants.ConnectionRequest:
-		fmt.Println("ConnectionRequest")
 		network := bytes.NewBuffer(buf[1:n])
 		dec := gob.NewDecoder(network)
 
 		var p packets.BroadcastConnectRequest
 		err = dec.Decode(&p)
-		checkError(err)
+		if err != nil {
+			m.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet", "packet",
+				"BroadcastConnectRequest", "err", err.Error()))
+		}
 
-		fmt.Println("IP", p.Source.String(), "PORT", p.Port)
+		portStr := strconv.Itoa(int(p.Port))
+		m.Logger.Info(logger.FormatLogMessage("msg", "Connection request", "ip", p.Source.String(), "port", portStr))
 
-		addr, err = net.ResolveUDPAddr("udp4", p.Source.String()+":"+strconv.Itoa(int(p.Port)))
+		addr, err = net.ResolveUDPAddr("udp4", p.Source.String()+":"+portStr)
 
 		if err != nil {
 			return
 		}
 		daytime := time.Now().String()
 		conn.WriteToUDP([]byte(daytime), addr)
+		// TODO: wait for an ACK from slave
 	default:
-		fmt.Println("Invalid Packet")
+		m.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet for connection"))
 	}
 
-}
-
-func checkError(err error) {
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "Fatal error ", err.Error())
-		os.Exit(1)
-	}
 }
