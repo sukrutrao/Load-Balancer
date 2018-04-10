@@ -3,6 +3,9 @@ package utility
 import (
 	"errors"
 	"net"
+
+	"github.com/GoodDeeds/load-balancer/common/logger"
+	"github.com/op/go-logging"
 )
 
 var ipNotFoundError error = errors.New("IP not found")
@@ -25,4 +28,10 @@ func GetMyIP() (*net.IPNet, error) {
 
 	return &net.IPNet{}, ipNotFoundError
 
+}
+
+func CheckFatal(err error, log *logging.Logger) {
+	if err != nil {
+		log.Fatal(logger.FormatLogMessage("err", err.Error()))
+	}
 }
