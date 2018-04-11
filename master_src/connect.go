@@ -35,7 +35,7 @@ func (m *Master) handleClient(conn *net.UDPConn) {
 
 	packetType := buf[0]
 
-	switch int8(packetType) {
+	switch constants.PacketType(packetType) {
 	case constants.ConnectionRequest:
 		network := bytes.NewBuffer(buf[1:n])
 		dec := gob.NewDecoder(network)

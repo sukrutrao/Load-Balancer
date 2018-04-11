@@ -4,6 +4,7 @@ import (
 	"net"
 	"sync"
 
+	"github.com/GoodDeeds/load-balancer/common/constants"
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/utility"
 	"github.com/op/go-logging"
@@ -16,6 +17,16 @@ type Master struct {
 	slavePool   SlavePool
 	close       chan struct{}
 	Logger      *logging.Logger
+	tasks       []*Task
+}
+
+type Task struct {
+	TaskId     int
+	Task       string
+	Load       int
+	AssignedTo *Slave
+	IsAssigned bool
+	TaskStatus constants.Status
 }
 
 func (m *Master) Run() {

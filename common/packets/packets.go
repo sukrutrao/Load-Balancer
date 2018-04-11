@@ -19,22 +19,20 @@ type BroadcastConnectResponse struct {
 	IP  net.IP
 }
 
-// Q - what about security? TODO
-
 type TaskOfferRequest struct {
-	RequestId int
-	Load      int
+	TaskId int
+	Load   int
 }
 
 type TaskOfferResponse struct {
-	RequestId int
-	Accept    bool
+	TaskId int
+	Accept bool
 }
 
 type TaskRequest struct {
-	OfferRequestId int
-	TaskId         int
-	Task           string // TODO - change this
+	TaskId int
+	Task   string // TODO - change this
+	Load   int
 }
 
 type TaskRequestResponse struct {

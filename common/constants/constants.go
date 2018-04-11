@@ -17,9 +17,12 @@ const (
 	InfoReceiverPort    int16 = 3003
 )
 
+type PacketType int8
+type Status int8
+
 // Types
 const (
-	ConnectionRequest int8 = iota
+	ConnectionRequest PacketType = iota
 	ConnectionResponse
 	TaskOfferRequest
 	TaskOfferResponse
@@ -35,7 +38,7 @@ const (
 // would give it finer granularity
 // specify an estimate when the slave might be free, so the master can query again?
 const (
-	Complete int8 = iota
+	Complete Status = iota
 	Incomplete
 	Invalid
 )
