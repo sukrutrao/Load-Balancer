@@ -19,16 +19,6 @@ type BroadcastConnectResponse struct {
 	IP  net.IP
 }
 
-type TaskOfferRequest struct {
-	TaskId int
-	Load   int
-}
-
-type TaskOfferResponse struct {
-	TaskId int
-	Accept bool
-}
-
 type TaskRequest struct {
 	TaskId int
 	Task   string // TODO - change this
@@ -41,8 +31,8 @@ type TaskRequestResponse struct {
 }
 
 type TaskResultResponse struct {
-	TaskId     int
-	TaskResult string
+	TaskId int
+	Result TaskResult
 }
 
 type TaskStatusRequest struct {
@@ -50,6 +40,6 @@ type TaskStatusRequest struct {
 }
 
 type TaskStatusResponse struct {
-	TaskId int
-	Status int8 // from status constants in constants.go
+	TaskId     int
+	TaskStatus Status // from status constants in constants.go
 }
