@@ -19,6 +19,19 @@ type Slave struct {
 	broadcastIP net.IP
 	close       chan struct{}
 	Logger      *logging.Logger
+	tasks       map[int]Task
+}
+
+type Task struct {
+	TaskId     int
+	Task       string
+	Load       int
+	TaskStatus constants.Status
+	Result     *TaskResult
+}
+
+type TaskResult struct {
+	Result string
 }
 
 // Run starts the slave

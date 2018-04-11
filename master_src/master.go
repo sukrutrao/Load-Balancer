@@ -17,7 +17,7 @@ type Master struct {
 	slavePool   SlavePool
 	close       chan struct{}
 	Logger      *logging.Logger
-	tasks       []*Task
+	tasks       map[int]Task
 }
 
 type Task struct {

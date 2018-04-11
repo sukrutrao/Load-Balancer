@@ -7,17 +7,18 @@ import (
 	"github.com/GoodDeeds/load-balancer/common/packets"
 )
 
-func (m *Master) offerTask(s *Slave, t *Task, conn *net.TCPConn) {
-	p := packets.TaskOfferRequest{t.TaskId, t.Load}
-	enc := packets.EncodePacket(p, constants.TaskOfferRequest)
+func (m *Master) assignTask(s *Slave, t *Task, conn *net.TCPConn) {
+	p := packets.TaskRequest{t.TaskId, t.Task, t.Load}
+	enc, err := packets.EncodePacket{p, constants.TaskRequest}
 	_, err := conn.Write(enc)
 
 	// response code pending
 }
 
-func (m *Master) assignTask(s *Slave, t *Task, conn *net.TCPConn) {
-	p := packets.TaskRequest{t.TaskId, t.Task, t.Load}
-	enc := packets.EncodePacket{p, constants.TaskRequest}
+// not sure if this is needed
+func (m *Master) requestTaskStatus(s *Slave, t *Task, conn *net.TCPConn) {
+	p := packets.TaskStatusRequest{t.TaskId}
+	enc, err := packets.EncodePacket{p, constants.TaskStatusRequest}
 	_, err := conn.Write(enc)
 
 	// response code pending

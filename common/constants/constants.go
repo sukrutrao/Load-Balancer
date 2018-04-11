@@ -24,8 +24,6 @@ type Status int8
 const (
 	ConnectionRequest PacketType = iota
 	ConnectionResponse
-	TaskOfferRequest
-	TaskOfferResponse
 	TaskRequest
 	TaskRequestResponse
 	TaskResultResponse
