@@ -1,8 +1,6 @@
 package slave
 
 import (
-	"bytes"
-	"encoding/gob"
 	"net"
 	"strconv"
 
@@ -24,19 +22,22 @@ func (s *Slave) connect() {
 	conn2, err := net.ListenUDP("udp", udpAddr)
 	utility.CheckFatal(err, s.Logger)
 
-	var network bytes.Buffer
-	network.WriteByte(byte(constants.ConnectionRequest))
-	enc := gob.NewEncoder(&network)
-	err = enc.Encode(packets.BroadcastConnectRequest{
+	pkt := packets.BroadcastConnectRequest{
 		Source: s.myIP,
 		Port:   constants.SlaveBroadcastPort,
-	})
+	}
+	encodedBytes, err := packets.EncodePacket(pkt, packets.ConnectionRequest)
 	utility.CheckFatal(err, s.Logger)
-	_, err = conn.Write(network.Bytes())
+
+	// TODO: Retry for some time
+	// TODO: Retry with timeout
+	_, err = conn.Write(encodedBytes)
+	utility.CheckFatal(err, s.Logger)
 
 	var buf [512]byte
 	n, _, err := conn2.ReadFromUDP(buf[0:])
 
 	s.Logger.Info(logger.FormatLogMessage("msg", "Connection response", "rsp", string(buf[0:n])))
 
+	// TODO: send an ACK
 }

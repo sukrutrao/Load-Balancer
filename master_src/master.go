@@ -3,6 +3,7 @@ package master
 import (
 	"net"
 	"sync"
+	"time"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/utility"
@@ -14,14 +15,26 @@ type Master struct {
 	myIP        net.IP
 	broadcastIP net.IP
 	slavePool   SlavePool
-	close       chan struct{}
 	Logger      *logging.Logger
+
+	close     chan struct{}
+	closeWait sync.WaitGroup
+}
+
+func (m *Master) initDS() {
+	m.close = make(chan struct{})
 }
 
 func (m *Master) Run() {
-	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
+	m.initDS()
 	m.updateAddress()
-	m.connect()
+	go m.connect()
+	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
+
+	// TODO: this sleep is just for simulation
+	// this should be replaced with load balancing.
+	time.Sleep(10 * time.Second)
+	m.Close()
 }
 
 func (m *Master) updateAddress() {
@@ -37,7 +50,9 @@ func (m *Master) updateAddress() {
 }
 
 func (m *Master) Close() {
+	m.Logger.Info(logger.FormatLogMessage("msg", "Closing Master gracefully..."))
 	close(m.close)
+	m.closeWait.Wait()
 }
 
 // Slave is used to store info of slave node connected to it
@@ -51,4 +66,29 @@ type Slave struct {
 type SlavePool struct {
 	mtx    sync.RWMutex
 	slaves []*Slave
+}
+
+func (sp *SlavePool) AddSlave(slave *Slave) {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+	sp.slaves = append(sp.slaves, slave)
+}
+
+func (sp *SlavePool) RemoveSlave(ip string) bool {
+	sp.mtx.Lock()
+	defer sp.mtx.Unlock()
+	toRemove := -1
+	for i, slave := range sp.slaves {
+		if slave.ip == ip {
+			toRemove = i
+			break
+		}
+	}
+
+	if toRemove < 0 {
+		return false
+	}
+
+	sp.slaves = append(sp.slaves[:toRemove], sp.slaves[toRemove+1:]...)
+	return true
 }

@@ -2,6 +2,7 @@ package constants
 
 import (
 	"net"
+	"time"
 )
 
 // Addressess
@@ -17,8 +18,7 @@ const (
 	InfoReceiverPort    int16 = 3003
 )
 
-// Types
+// Timeouts
 const (
-	ConnectionRequest int8 = iota
-	ConnectionResponse
+	WaitForSlaveTimeout time.Duration = 5 * time.Second
 )
