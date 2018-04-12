@@ -7,7 +7,7 @@ import (
 )
 
 var format = logging.MustStringFormatter(
-	`%{color}level=%{level:.4s}%{color:reset} time=%{time:15:04:05.000} file=%{shortfile} ▶ %{message}`,
+	`%{color}level=%{level:.4s}%{color:reset} time=%{time:15:04:05.000} file=%{shortfile} %{color}▶%{color:reset} %{message}`,
 )
 
 type Level logging.Level

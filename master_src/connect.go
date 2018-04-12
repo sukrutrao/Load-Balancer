@@ -31,11 +31,10 @@ func (m *Master) connect() {
 		case <-m.close:
 			// Master is closed.
 			// TODO: end connection with slaves.
-			m.Logger.Info(logger.FormatLogMessage("msg", "Stopping to accept slave connection request"))
+			m.Logger.Info(logger.FormatLogMessage("msg", "Stopping to accept new slave connections"))
 			end = true
 			break
 		default:
-			// TODO: add timeout and check if master is closed.
 			m.handleClient(conn, packetChan)
 		}
 	}
@@ -45,19 +44,19 @@ func (m *Master) connect() {
 type connectionReqData struct {
 	n    int
 	addr *net.UDPAddr
-	buf  [1024]byte
+	buf  [2048]byte
 }
 
 func (m *Master) collectIncomingRequests(conn *net.UDPConn, packetChan chan<- connectionReqData) {
 	for {
-		var buf [1024]byte
+		var buf [2048]byte
 		n, addr, err := conn.ReadFromUDP(buf[0:])
 		if err != nil {
 			m.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from UDP"))
 			continue
 		}
 
-		var bufCopy [1024]byte
+		var bufCopy [2048]byte
 		copy(bufCopy[:], buf[:])
 		packetChan <- connectionReqData{
 			n:    n,
@@ -67,7 +66,6 @@ func (m *Master) collectIncomingRequests(conn *net.UDPConn, packetChan chan<- co
 	}
 }
 
-// TODO: add slave to slavePool.
 func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReqData) {
 
 	select {
@@ -76,38 +74,84 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 			break
 		}
 
-		packetType := packets.PacketType(packet.buf[0])
+		packetType, err := packets.GetPacketType(packet.buf[:])
+		if err != nil {
+			m.Logger.Error(logger.FormatLogMessage("err", err.Error()))
+			return
+		}
 
 		switch packetType {
 		case packets.ConnectionRequest:
+			// Processing request.
 			var p packets.BroadcastConnectRequest
-			err := packets.DecodePacket(packet.buf[1:packet.n], &p)
+			err := packets.DecodePacket(packet.buf[:packet.n], &p)
 			if err != nil {
 				m.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet", "packet",
 					"BroadcastConnectRequest", "err", err.Error()))
+				return
 			}
 
 			portStr := strconv.Itoa(int(p.Port))
 			m.Logger.Info(logger.FormatLogMessage("msg", "Connection request", "ip", p.Source.String(), "port", portStr))
 
-			addr, err := net.ResolveUDPAddr("udp4", p.Source.String()+":"+portStr)
+			isAck := false
 
+			if !m.SlaveIpExists(p.Source) {
+				isAck = true
+				m.unackedSlaveMtx.Lock()
+				if _, ok := m.unackedSlaves[p.Source.String()+":"+portStr]; !ok {
+					m.unackedSlaves[p.Source.String()+":"+portStr] = struct{}{}
+				}
+				m.unackedSlaveMtx.Unlock()
+			}
+
+			addr, err := net.ResolveUDPAddr("udp4", p.Source.String()+":"+portStr)
 			if err != nil {
 				m.Logger.Error(logger.FormatLogMessage("msg", "Failed to resolve slave address", "err", err.Error()))
 				return
 			}
 
-			// TODO: send ACK/NAC
-			daytime := time.Now().String()
-			conn.WriteToUDP([]byte(daytime), addr)
-			// TODO: wait for an ACK from slave
+			// Sending ACK.
+			ack := packets.BroadcastConnectResponse{
+				Ack: isAck,
+				IP:  m.myIP,
+			}
+			ackBytes, err := packets.EncodePacket(ack, packets.ConnectionResponse)
+			if err != nil {
+				m.Logger.Error(logger.FormatLogMessage("msg", "Failed to send Ack for connection", "err", err.Error()))
+				return
+			}
+			conn.WriteToUDP(ackBytes, addr)
 
-			m.slavePool.AddSlave(&Slave{
-				ip: p.Source.String(),
-			})
+		case packets.ConnectionAck:
+
+			var p packets.BroadcastConnectResponse
+			err := packets.DecodePacket(packet.buf[:packet.n], &p)
+			if err != nil {
+				m.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet", "packet",
+					"BroadcastConnectResponse", "err", err.Error()))
+				return
+			}
+
+			portStr := strconv.Itoa(int(p.Port))
+
+			m.unackedSlaveMtx.Lock()
+			if _, ok := m.unackedSlaves[p.IP.String()+":"+portStr]; ok {
+				delete(m.unackedSlaves, p.IP.String()+":"+portStr)
+				m.unackedSlaveMtx.Unlock()
+				m.slavePool.AddSlave(&Slave{
+					ip: p.IP.String(),
+				})
+				m.Logger.Info(logger.FormatLogMessage("msg", "Connection request granted", "ip", p.IP.String(), "port", portStr))
+			} else {
+				m.unackedSlaveMtx.Unlock()
+			}
+
 		default:
 			m.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet for connection"))
 		}
+
+	// Timeout
 	case <-time.After(constants.WaitForSlaveTimeout):
 
 	}

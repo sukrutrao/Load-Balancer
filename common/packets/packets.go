@@ -13,11 +13,14 @@ import (
 */
 
 // Types
-type PacketType int8
+type PacketType uint8
 
 const (
-	ConnectionRequest PacketType = iota
+	PacketTypeBeg PacketType = iota
+	ConnectionRequest
 	ConnectionResponse
+	ConnectionAck
+	PacketTypeEnd
 )
 
 type BroadcastConnectRequest struct {
@@ -26,8 +29,17 @@ type BroadcastConnectRequest struct {
 }
 
 type BroadcastConnectResponse struct {
-	Ack bool
-	IP  net.IP
+	Ack  bool
+	IP   net.IP
+	Port int16
+}
+
+func GetPacketType(buf []byte) (PacketType, error) {
+	packetType := PacketType(buf[0])
+	if packetType <= PacketTypeBeg || packetType >= PacketTypeEnd {
+		return packetType, errors.New("Invalid PacketType")
+	}
+	return packetType, nil
 }
 
 func EncodePacket(packet interface{}, packetType PacketType) ([]byte, error) {
@@ -52,7 +64,7 @@ func EncodePacket(packet interface{}, packetType PacketType) ([]byte, error) {
 
 func DecodePacket(buf []byte, packet interface{}) error {
 
-	network := bytes.NewBuffer(buf)
+	network := bytes.NewBuffer(buf[1:])
 	dec := gob.NewDecoder(network)
 
 	err := dec.Decode(packet)

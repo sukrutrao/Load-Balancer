@@ -17,12 +17,16 @@ type Master struct {
 	slavePool   SlavePool
 	Logger      *logging.Logger
 
+	unackedSlaves   map[string]struct{}
+	unackedSlaveMtx sync.RWMutex
+
 	close     chan struct{}
 	closeWait sync.WaitGroup
 }
 
 func (m *Master) initDS() {
 	m.close = make(chan struct{})
+	m.unackedSlaves = make(map[string]struct{})
 }
 
 func (m *Master) Run() {
@@ -47,6 +51,10 @@ func (m *Master) updateAddress() {
 	for i, b := range ipnet.Mask {
 		m.broadcastIP = append(m.broadcastIP, (m.myIP[i] | (^b)))
 	}
+}
+
+func (m *Master) SlaveIpExists(ip net.IP) bool {
+	return m.slavePool.SlaveIpExists(ip)
 }
 
 func (m *Master) Close() {
@@ -91,4 +99,16 @@ func (sp *SlavePool) RemoveSlave(ip string) bool {
 
 	sp.slaves = append(sp.slaves[:toRemove], sp.slaves[toRemove+1:]...)
 	return true
+}
+
+func (sp *SlavePool) SlaveIpExists(ip net.IP) bool {
+	sp.mtx.RLock()
+	defer sp.mtx.RUnlock()
+	ipStr := ip.String()
+	for _, slave := range sp.slaves {
+		if slave.ip == ipStr {
+			return true
+		}
+	}
+	return false
 }
