@@ -103,8 +103,14 @@ func (s *Slave) connect() error {
 	return nil
 }
 
+// Listeners.
+
 func (s *Slave) initListeners() error {
 	err := s.initInfoListener()
+	if err != nil {
+		return err
+	}
+	err = s.initReqListener()
 	if err != nil {
 		return err
 	}
@@ -115,6 +121,37 @@ type tcpData struct {
 	n   int
 	buf [2048]byte
 }
+
+func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData) {
+	s.closeWait.Add(1)
+
+	end := false
+	for !end {
+		select {
+		case <-s.close:
+			end = true
+		default:
+			var buf [2048]byte
+			// TODO: add timeout
+			n, err := conn.Read(buf[0:])
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
+				continue
+			}
+
+			var bufCopy [2048]byte
+			copy(bufCopy[:], buf[:])
+			packetChan <- tcpData{
+				n:   n,
+				buf: bufCopy,
+			}
+		}
+	}
+
+	s.closeWait.Done()
+}
+
+/// Info listener
 
 func (s *Slave) initInfoListener() error {
 	ln, err := net.Listen("tcp", s.myIP.String()+":0")
@@ -153,35 +190,6 @@ func (s *Slave) infoListenManager(ln net.Listener) {
 	s.closeWait.Done()
 }
 
-func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData) {
-	s.closeWait.Add(1)
-
-	end := false
-	for !end {
-		select {
-		case <-s.close:
-			end = true
-		default:
-			var buf [2048]byte
-			// TODO: add timeout
-			n, err := conn.Read(buf[0:])
-			if err != nil {
-				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
-				continue
-			}
-
-			var bufCopy [2048]byte
-			copy(bufCopy[:], buf[:])
-			packetChan <- tcpData{
-				n:   n,
-				buf: bufCopy,
-			}
-		}
-	}
-
-	s.closeWait.Done()
-}
-
 func (s *Slave) infoListener(conn net.Conn, packetChan <-chan tcpData) {
 
 	select {
@@ -213,14 +221,77 @@ func (s *Slave) infoListener(conn net.Conn, packetChan <-chan tcpData) {
 		}
 
 	// Timeout
-	case <-time.After(constants.WaitForInfoReqTimeout):
+	case <-time.After(constants.WaitForReqTimeout):
 
 	}
 
 }
 
-// TODO: do like req listener. Check with Sukrut.
-func (s *Slave) reqListener() {
+/// Request listener
+
+func (s *Slave) initReqListener() error {
+	ln, err := net.Listen("tcp", s.myIP.String()+":0")
+	if err != nil {
+		return err
+	}
+
+	go s.reqListenManager(ln)
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	s.reqSendPort = uint16(port)
+	return nil
+}
+
+func (s *Slave) reqListenManager(ln net.Listener) {
 	s.closeWait.Add(1)
+
+	// TODO: handle error in accept
+	conn, _ := ln.Accept()
+
+	packetChan := make(chan tcpData)
+	go s.collectIncomingRequests(conn, packetChan)
+
+	end := false
+	for !end {
+		select {
+		case <-s.close:
+			s.Logger.Info(logger.FormatLogMessage("msg", "Stopping Request Listener"))
+			end = true
+			break
+		default:
+			s.reqListener(conn, packetChan)
+		}
+	}
+
 	s.closeWait.Done()
+}
+
+func (s *Slave) reqListener(conn net.Conn, packetChan <-chan tcpData) {
+
+	select {
+	case packet, ok := <-packetChan:
+		if !ok {
+			break
+		}
+
+		packetType, err := packets.GetPacketType(packet.buf[:])
+		if err != nil {
+			s.Logger.Error(logger.FormatLogMessage("err", err.Error()))
+			return
+		}
+
+		switch packetType {
+		// TODO: call functions from Sukrut
+		// Structure
+		// case packets.ThePacketType:
+		// Get packet from bytes and call appropriate function.
+		default:
+			s.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet for connection"))
+		}
+
+	// Timeout
+	case <-time.After(constants.WaitForReqTimeout):
+
+	}
+
 }
