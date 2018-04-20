@@ -2,6 +2,7 @@ package slave
 
 import (
 	"net"
+	"sync"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/utility"
@@ -17,8 +18,13 @@ type Master struct {
 type Slave struct {
 	myIP        net.IP
 	broadcastIP net.IP
-	close       chan struct{}
-	Logger      *logging.Logger
+	infoReqPort uint16
+	reqSendPort uint16
+
+	Logger *logging.Logger
+
+	close     chan struct{}
+	closeWait sync.WaitGroup
 }
 
 // Run starts the slave

@@ -32,7 +32,7 @@ func (m *Master) initDS() {
 func (m *Master) Run() {
 	m.initDS()
 	m.updateAddress()
-	go m.connect()
+	m.connect()
 	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
 
 	// TODO: this sleep is just for simulation
@@ -65,7 +65,9 @@ func (m *Master) Close() {
 
 // Slave is used to store info of slave node connected to it
 type Slave struct {
-	ip string
+	ip          string
+	infoReqPort uint16
+	reqSendPort uint16
 
 	// Need to acquire Write Lock which modifying any value.
 	mtx sync.RWMutex

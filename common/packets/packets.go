@@ -20,18 +20,47 @@ const (
 	ConnectionRequest
 	ConnectionResponse
 	ConnectionAck
+	InfoRequest
+	InfoResponse
 	PacketTypeEnd
 )
 
+func (pt PacketType) String() string {
+	switch pt {
+	case ConnectionRequest:
+		return "ConnectionRequest"
+	case ConnectionResponse:
+		return "ConnectionResponse"
+	case ConnectionAck:
+		return "ConnectionAck"
+	case InfoRequest:
+		return "InfoRequest"
+	case InfoResponse:
+		return "InfoResponse"
+	default:
+		return ""
+	}
+}
+
 type BroadcastConnectRequest struct {
 	Source net.IP
-	Port   int16
+	Port   uint16
 }
 
 type BroadcastConnectResponse struct {
-	Ack  bool
-	IP   net.IP
-	Port int16
+	Ack         bool
+	IP          net.IP
+	Port        uint16
+	InfoReqPort uint16
+	ReqSendPort uint16
+}
+
+type InfoRequestPacket struct {
+	Port uint16
+}
+
+type InfoResponsePacket struct {
+	Load float64
 }
 
 func GetPacketType(buf []byte) (PacketType, error) {

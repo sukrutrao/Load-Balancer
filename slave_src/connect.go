@@ -15,15 +15,24 @@ import (
 
 func (s *Slave) connect() error {
 
-	udpAddr, err := net.ResolveUDPAddr("udp4", s.broadcastIP.String()+":"+strconv.Itoa(int(constants.MasterBroadcastPort)))
+	// TODO: create a TCP connection for info and requests.
+	err := s.initListeners()
 	utility.CheckFatal(err, s.Logger)
+
+	udpAddr := &net.UDPAddr{
+		IP:   s.broadcastIP,
+		Port: int(constants.MasterBroadcastPort),
+	}
 	conn, err := net.DialUDP("udp", nil, udpAddr)
 	utility.CheckFatal(err, s.Logger)
 
-	udpAddr, err = net.ResolveUDPAddr("udp4", s.myIP.String()+":"+strconv.Itoa(int(constants.SlaveBroadcastPort)))
-	utility.CheckFatal(err, s.Logger)
+	udpAddr = &net.UDPAddr{
+		IP:   s.myIP,
+		Port: 0,
+	}
 	connRecv, err := net.ListenUDP("udp", udpAddr)
 	utility.CheckFatal(err, s.Logger)
+	myPort := utility.PortFromUDPConn(connRecv)
 
 	tries := 0
 	var p packets.BroadcastConnectResponse
@@ -32,7 +41,7 @@ func (s *Slave) connect() error {
 
 		pkt := packets.BroadcastConnectRequest{
 			Source: s.myIP,
-			Port:   constants.SlaveBroadcastPort,
+			Port:   myPort,
 		}
 		encodedBytes, err := packets.EncodePacket(pkt, packets.ConnectionRequest)
 		utility.CheckFatal(err, s.Logger)
@@ -74,7 +83,7 @@ func (s *Slave) connect() error {
 	ack := packets.BroadcastConnectResponse{
 		Ack:  true,
 		IP:   s.myIP,
-		Port: constants.SlaveBroadcastPort,
+		Port: myPort,
 	}
 	ackBytes, err := packets.EncodePacket(ack, packets.ConnectionAck)
 	utility.CheckFatal(err, s.Logger)
@@ -92,4 +101,126 @@ func (s *Slave) connect() error {
 
 	s.Logger.Info(logger.FormatLogMessage("msg", "Connection response", "ack", strconv.FormatBool(p.Ack), "server_ip", p.IP.String()))
 	return nil
+}
+
+func (s *Slave) initListeners() error {
+	err := s.initInfoListener()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+type tcpData struct {
+	n   int
+	buf [2048]byte
+}
+
+func (s *Slave) initInfoListener() error {
+	ln, err := net.Listen("tcp", s.myIP.String()+":0")
+	if err != nil {
+		return err
+	}
+
+	go s.infoListenManager(ln)
+
+	port := ln.Addr().(*net.TCPAddr).Port
+	s.infoReqPort = uint16(port)
+	return nil
+}
+
+func (s *Slave) infoListenManager(ln net.Listener) {
+	s.closeWait.Add(1)
+
+	// TODO: handle error in accept
+	conn, _ := ln.Accept()
+
+	packetChan := make(chan tcpData)
+	go s.collectIncomingRequests(conn, packetChan)
+
+	end := false
+	for !end {
+		select {
+		case <-s.close:
+			s.Logger.Info(logger.FormatLogMessage("msg", "Stopping Info Listener"))
+			end = true
+			break
+		default:
+			s.infoListener(conn, packetChan)
+		}
+	}
+
+	s.closeWait.Done()
+}
+
+func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData) {
+	s.closeWait.Add(1)
+
+	end := false
+	for !end {
+		select {
+		case <-s.close:
+			end = true
+		default:
+			var buf [2048]byte
+			// TODO: add timeout
+			n, err := conn.Read(buf[0:])
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
+				continue
+			}
+
+			var bufCopy [2048]byte
+			copy(bufCopy[:], buf[:])
+			packetChan <- tcpData{
+				n:   n,
+				buf: bufCopy,
+			}
+		}
+	}
+
+	s.closeWait.Done()
+}
+
+func (s *Slave) infoListener(conn net.Conn, packetChan <-chan tcpData) {
+
+	select {
+	case packet, ok := <-packetChan:
+		if !ok {
+			break
+		}
+
+		packetType, err := packets.GetPacketType(packet.buf[:])
+		if err != nil {
+			s.Logger.Error(logger.FormatLogMessage("err", err.Error()))
+			return
+		}
+
+		switch packetType {
+		case packets.InfoRequest:
+			var p packets.InfoRequestPacket
+			err := packets.DecodePacket(packet.buf[:packet.n], &p)
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+					"packet", packetType.String(), "err", err.Error()))
+				return
+			}
+
+			// TODO: respond with load
+
+		default:
+			s.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet for connection"))
+		}
+
+	// Timeout
+	case <-time.After(constants.WaitForInfoReqTimeout):
+
+	}
+
+}
+
+// TODO: do like req listener. Check with Sukrut.
+func (s *Slave) reqListener() {
+	s.closeWait.Add(1)
+	s.closeWait.Done()
 }

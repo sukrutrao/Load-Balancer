@@ -35,3 +35,7 @@ func CheckFatal(err error, log *logging.Logger) {
 		log.Fatal(logger.FormatLogMessage("err", err.Error()))
 	}
 }
+
+func PortFromUDPConn(udpConn *net.UDPConn) uint16 {
+	return uint16(udpConn.LocalAddr().(*net.UDPAddr).Port)
+}
