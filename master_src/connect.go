@@ -147,7 +147,9 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 				delete(m.unackedSlaves, p.IP.String()+":"+portStr)
 				m.unackedSlaveMtx.Unlock()
 				m.slavePool.AddSlave(&Slave{
-					ip: p.IP.String(),
+					ip:          p.IP.String(),
+					infoReqPort: p.InfoReqPort,
+					reqSendPort: p.ReqSendPort,
 				})
 				m.Logger.Info(logger.FormatLogMessage("msg", "Connection request granted", "ip", p.IP.String(), "port", portStr))
 			} else {

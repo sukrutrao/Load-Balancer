@@ -18,7 +18,8 @@ const (
 // Timeouts
 const (
 	WaitForSlaveTimeout time.Duration = 5 * time.Second
-	WaitForReqTimeout   time.Duration = 5 * time.Second
+	WaitForReqTimeout                 = 5 * time.Second
+	InfoRequestInterval               = 5 * time.Second
 )
 
 // Others

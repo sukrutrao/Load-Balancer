@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"net"
+	"time"
 )
 
 /*
@@ -60,7 +61,8 @@ type InfoRequestPacket struct {
 }
 
 type InfoResponsePacket struct {
-	Load float64
+	Timestamp time.Time
+	Load      float64
 }
 
 func GetPacketType(buf []byte) (PacketType, error) {
@@ -73,9 +75,14 @@ func GetPacketType(buf []byte) (PacketType, error) {
 
 func EncodePacket(packet interface{}, packetType PacketType) ([]byte, error) {
 
+	if packetType <= PacketTypeBeg || packetType >= PacketTypeEnd {
+		return nil, errors.New("Invalid packet type")
+	}
 	switch t := packet.(type) {
 	case BroadcastConnectRequest:
 	case BroadcastConnectResponse:
+	case InfoRequestPacket:
+	case InfoResponsePacket:
 	default:
 		_ = t
 		return nil, errors.New("Invalid packet")

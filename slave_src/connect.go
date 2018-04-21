@@ -2,6 +2,7 @@ package slave
 
 import (
 	"errors"
+	"io"
 	"net"
 	"os"
 	"strconv"
@@ -14,6 +15,8 @@ import (
 )
 
 func (s *Slave) connect() error {
+
+	// TODO: store the ip of the master
 
 	// TODO: create a TCP connection for info and requests.
 	err := s.initListeners()
@@ -81,9 +84,11 @@ func (s *Slave) connect() error {
 	}
 
 	ack := packets.BroadcastConnectResponse{
-		Ack:  true,
-		IP:   s.myIP,
-		Port: myPort,
+		Ack:         true,
+		IP:          s.myIP,
+		Port:        myPort,
+		InfoReqPort: s.infoReqPort,
+		ReqSendPort: s.reqSendPort,
 	}
 	ackBytes, err := packets.EncodePacket(ack, packets.ConnectionAck)
 	utility.CheckFatal(err, s.Logger)
@@ -123,8 +128,6 @@ type tcpData struct {
 }
 
 func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData) {
-	s.closeWait.Add(1)
-
 	end := false
 	for !end {
 		select {
@@ -135,7 +138,11 @@ func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData
 			// TODO: add timeout
 			n, err := conn.Read(buf[0:])
 			if err != nil {
-				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
+				if err == io.EOF {
+					close(s.close)
+					end = true
+				}
 				continue
 			}
 
@@ -148,7 +155,6 @@ func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData
 		}
 	}
 
-	s.closeWait.Done()
 }
 
 /// Info listener
@@ -198,12 +204,11 @@ func (s *Slave) infoListener(conn net.Conn, packetChan <-chan tcpData) {
 			break
 		}
 
-		packetType, err := packets.GetPacketType(packet.buf[:])
+		packetType, err := packets.GetPacketType(packet.buf[:packet.n])
 		if err != nil {
 			s.Logger.Error(logger.FormatLogMessage("err", err.Error()))
 			return
 		}
-
 		switch packetType {
 		case packets.InfoRequest:
 			var p packets.InfoRequestPacket
@@ -214,10 +219,28 @@ func (s *Slave) infoListener(conn net.Conn, packetChan <-chan tcpData) {
 				return
 			}
 
-			// TODO: respond with load
+			// TODO: respond with proper load
+			res := packets.InfoResponsePacket{
+				Timestamp: time.Now(),
+				Load:      3.1415,
+			}
+
+			bytes, err := packets.EncodePacket(res, packets.InfoResponse)
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Failed to encode packet",
+					"packet", packets.InfoResponse.String(), "err", err.Error()))
+				return
+			}
+
+			_, err = conn.Write(bytes)
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Failed to send packet",
+					"packet", packets.InfoResponse.String(), "err", err.Error()))
+				return
+			}
 
 		default:
-			s.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet for connection"))
+			s.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet"))
 		}
 
 	// Timeout
@@ -286,7 +309,7 @@ func (s *Slave) reqListener(conn net.Conn, packetChan <-chan tcpData) {
 		// case packets.ThePacketType:
 		// Get packet from bytes and call appropriate function.
 		default:
-			s.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet for connection"))
+			s.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet"))
 		}
 
 	// Timeout
