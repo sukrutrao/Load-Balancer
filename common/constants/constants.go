@@ -2,6 +2,7 @@ package constants
 
 import (
 	"net"
+	"time"
 )
 
 // Addressess
@@ -11,10 +12,7 @@ var (
 
 // Ports
 const (
-	MasterBroadcastPort int16 = 3000
-	SlaveBroadcastPort  int16 = 3001
-	InfoSenderPort      int16 = 3002
-	InfoReceiverPort    int16 = 3003
+	MasterBroadcastPort uint16 = 3000
 )
 
 type PacketType int8
@@ -39,4 +37,20 @@ const (
 	Complete Status = iota
 	Incomplete
 	Invalid
+)
+
+// Timeouts
+const (
+	WaitForSlaveTimeout       time.Duration = 5 * time.Second
+	WaitForReqTimeout                       = 5 * time.Second
+	LoadRequestInterval                     = 5 * time.Second
+	GarbageCollectionInterval               = 5 * time.Second
+)
+
+// Others
+const (
+	NumBurstAcks    int = 10
+	MaxConnectRetry     = 6
+
+	ConnectRetryBackoffBaseTime time.Duration = 2 * time.Second
 )
