@@ -13,6 +13,7 @@ var (
 // Ports
 const (
 	MasterBroadcastPort uint16 = 3000
+	HTTPServerPort      uint16 = 4242
 )
 
 // Timeouts
