@@ -87,7 +87,7 @@ func (s *Slave) connect() error {
 		Ack:         true,
 		IP:          s.myIP,
 		Port:        myPort,
-		InfoReqPort: s.infoReqPort,
+		LoadReqPort: s.loadReqPort,
 		ReqSendPort: s.reqSendPort,
 	}
 	ackBytes, err := packets.EncodePacket(ack, packets.ConnectionAck)
@@ -111,7 +111,7 @@ func (s *Slave) connect() error {
 // Listeners.
 
 func (s *Slave) initListeners() error {
-	err := s.initInfoListener()
+	err := s.initLoadListener()
 	if err != nil {
 		return err
 	}
@@ -157,22 +157,22 @@ func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData
 
 }
 
-/// Info listener
+/// Load listener
 
-func (s *Slave) initInfoListener() error {
+func (s *Slave) initLoadListener() error {
 	ln, err := net.Listen("tcp", s.myIP.String()+":0")
 	if err != nil {
 		return err
 	}
 
-	go s.infoListenManager(ln)
+	go s.loadListenManager(ln)
 
 	port := ln.Addr().(*net.TCPAddr).Port
-	s.infoReqPort = uint16(port)
+	s.loadReqPort = uint16(port)
 	return nil
 }
 
-func (s *Slave) infoListenManager(ln net.Listener) {
+func (s *Slave) loadListenManager(ln net.Listener) {
 	s.closeWait.Add(1)
 
 	// TODO: handle error in accept
@@ -189,14 +189,14 @@ func (s *Slave) infoListenManager(ln net.Listener) {
 			end = true
 			break
 		default:
-			s.infoListener(conn, packetChan)
+			s.loadListener(conn, packetChan)
 		}
 	}
 
 	s.closeWait.Done()
 }
 
-func (s *Slave) infoListener(conn net.Conn, packetChan <-chan tcpData) {
+func (s *Slave) loadListener(conn net.Conn, packetChan <-chan tcpData) {
 
 	select {
 	case packet, ok := <-packetChan:
@@ -210,8 +210,8 @@ func (s *Slave) infoListener(conn net.Conn, packetChan <-chan tcpData) {
 			return
 		}
 		switch packetType {
-		case packets.InfoRequest:
-			var p packets.InfoRequestPacket
+		case packets.LoadRequest:
+			var p packets.LoadRequestPacket
 			err := packets.DecodePacket(packet.buf[:packet.n], &p)
 			if err != nil {
 				s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
@@ -220,22 +220,22 @@ func (s *Slave) infoListener(conn net.Conn, packetChan <-chan tcpData) {
 			}
 
 			// TODO: respond with proper load
-			res := packets.InfoResponsePacket{
+			res := packets.LoadResponsePacket{
 				Timestamp: time.Now(),
 				Load:      3.1415,
 			}
 
-			bytes, err := packets.EncodePacket(res, packets.InfoResponse)
+			bytes, err := packets.EncodePacket(res, packets.LoadResponse)
 			if err != nil {
 				s.Logger.Error(logger.FormatLogMessage("msg", "Failed to encode packet",
-					"packet", packets.InfoResponse.String(), "err", err.Error()))
+					"packet", packets.LoadResponse.String(), "err", err.Error()))
 				return
 			}
 
 			_, err = conn.Write(bytes)
 			if err != nil {
 				s.Logger.Error(logger.FormatLogMessage("msg", "Failed to send packet",
-					"packet", packets.InfoResponse.String(), "err", err.Error()))
+					"packet", packets.LoadResponse.String(), "err", err.Error()))
 				return
 			}
 

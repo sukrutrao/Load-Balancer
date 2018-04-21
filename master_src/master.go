@@ -40,6 +40,7 @@ func (m *Master) Run() {
 	m.initDS()
 	m.updateAddress()
 	go m.connect()
+	go m.gc_routine()
 	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
 
 	<-m.close
@@ -58,8 +59,22 @@ func (m *Master) updateAddress() {
 	}
 }
 
-func (m *Master) SlaveIpExists(ip net.IP) bool {
-	return m.slavePool.SlaveIpExists(ip)
+func (m *Master) SlaveExists(ip net.IP, id uint16) bool {
+	return m.slavePool.SlaveExists(ip, id)
+}
+
+func (m *Master) gc_routine() {
+	m.Logger.Info(logger.FormatLogMessage("msg", "Garbage collection routine started"))
+	end := false
+	for !end {
+		select {
+		case <-m.close:
+			end = true
+		default:
+			m.slavePool.gc(m.Logger)
+		}
+		<-time.After(constants.GarbageCollectionInterval)
+	}
 }
 
 func (m *Master) Close() {
@@ -76,7 +91,8 @@ func (m *Master) Close() {
 // Slave is used to store info of slave node connected to it
 type Slave struct {
 	ip          string
-	infoReqPort uint16
+	id          uint16
+	loadReqPort uint16
 	reqSendPort uint16
 	Logger      *logging.Logger
 
@@ -102,21 +118,21 @@ func (s *Slave) InitDS() {
 }
 
 func (s *Slave) InitConnections() error {
-	go s.infoHandler()
+	go s.loadRequestHandler()
 	// go s.requestHandler()
 	return nil
 }
 
-func (s *Slave) infoHandler() {
+func (s *Slave) loadRequestHandler() {
 	s.closeWait.Add(1)
 
-	address := s.ip + ":" + strconv.Itoa(int(s.infoReqPort))
+	address := s.ip + ":" + strconv.Itoa(int(s.loadReqPort))
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		close(s.close)
 	}
 
-	go s.infoUpdater(conn)
+	go s.loadRecvAndUpdater(conn)
 
 	end := false
 	for !end {
@@ -124,8 +140,8 @@ func (s *Slave) infoHandler() {
 		case <-s.close:
 			end = true
 		default:
-			packet := packets.InfoRequestPacket{}
-			bytes, err := packets.EncodePacket(packet, packets.InfoRequest)
+			packet := packets.LoadRequestPacket{}
+			bytes, err := packets.EncodePacket(packet, packets.LoadRequest)
 			if err != nil {
 				s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to encode packet",
 					"slave_ip", s.ip, "err", err.Error()))
@@ -133,18 +149,18 @@ func (s *Slave) infoHandler() {
 
 			_, err = conn.Write(bytes)
 			if err != nil {
-				s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send InfoReq packet",
+				s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send LoadReq packet",
 					"slave_ip", s.ip, "err", err.Error()))
 			}
 
-			<-time.After(constants.InfoRequestInterval)
+			<-time.After(constants.LoadRequestInterval)
 		}
 	}
 
 	s.closeWait.Done()
 }
 
-func (s *Slave) infoUpdater(conn net.Conn) {
+func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 	s.closeWait.Add(1)
 	end := false
 	for !end {
@@ -159,7 +175,8 @@ func (s *Slave) infoUpdater(conn net.Conn) {
 				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
 				if err == io.EOF {
 					// TODO: remove myself from slavepool
-					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip))
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
+						"slave_id", strconv.Itoa(int(s.id))))
 					close(s.close)
 					end = true
 				}
@@ -173,8 +190,8 @@ func (s *Slave) infoUpdater(conn net.Conn) {
 			}
 
 			switch packetType {
-			case packets.InfoResponse:
-				var p packets.InfoResponsePacket
+			case packets.LoadResponse:
+				var p packets.LoadResponsePacket
 				err := packets.DecodePacket(buf[:n], &p)
 				if err != nil {
 					s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
@@ -184,7 +201,7 @@ func (s *Slave) infoUpdater(conn net.Conn) {
 
 				s.UpdateLoad(p.Load, p.Timestamp)
 				s.Logger.Info(logger.FormatLogMessage("msg", "Load updated",
-					"slave_ip", s.ip, "load", strconv.FormatFloat(p.Load, 'E', -1, 64)))
+					"slave_ip", s.ip, "slave_id", strconv.Itoa(int(s.id)), "load", strconv.FormatFloat(p.Load, 'E', -1, 64)))
 
 			default:
 				s.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet"))
@@ -241,12 +258,12 @@ func (sp *SlavePool) RemoveSlave(ip string) bool {
 	return true
 }
 
-func (sp *SlavePool) SlaveIpExists(ip net.IP) bool {
+func (sp *SlavePool) SlaveExists(ip net.IP, id uint16) bool {
 	sp.mtx.RLock()
 	defer sp.mtx.RUnlock()
 	ipStr := ip.String()
 	for _, slave := range sp.slaves {
-		if slave.ip == ipStr {
+		if slave.ip == ipStr && slave.id == id {
 			return true
 		}
 	}
@@ -258,5 +275,29 @@ func (sp *SlavePool) Close(log *logging.Logger) {
 	log.Info(logger.FormatLogMessage("msg", "Closing Slave Pool"))
 	for _, s := range sp.slaves {
 		s.Close()
+	}
+}
+
+func (sp *SlavePool) gc(log *logging.Logger) {
+	toRemove := []int{}
+	for i, slave := range sp.slaves {
+		select {
+		case <-slave.close:
+			slave.closeWait.Wait()
+			toRemove = append(toRemove, i)
+		default:
+		}
+	}
+
+	if len(toRemove) > 0 {
+		sp.mtx.Lock()
+		defer sp.mtx.Unlock()
+
+		for i, idx := range toRemove {
+			log.Info(logger.FormatLogMessage("msg", "Slave removed in gc",
+				"slave_ip", sp.slaves[idx-i].ip, "slave_id", strconv.Itoa(int(sp.slaves[idx-i].id))))
+			sp.slaves = append(sp.slaves[:idx-i], sp.slaves[idx+1-i:]...)
+		}
+
 	}
 }

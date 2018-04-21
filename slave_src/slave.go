@@ -18,7 +18,7 @@ type Master struct {
 type Slave struct {
 	myIP        net.IP
 	broadcastIP net.IP
-	infoReqPort uint16
+	loadReqPort uint16
 	reqSendPort uint16
 	master      Master
 

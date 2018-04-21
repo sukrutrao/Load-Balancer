@@ -101,7 +101,7 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 			isAck := false
 
 			// TODO: instead of ip, check ip and port combination.
-			if !m.SlaveIpExists(p.Source) {
+			if !m.SlaveExists(p.Source, p.Port) {
 				isAck = true
 				m.unackedSlaveMtx.Lock()
 				if _, ok := m.unackedSlaves[p.Source.String()+":"+portStr]; !ok {
@@ -148,7 +148,8 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 				m.unackedSlaveMtx.Unlock()
 				m.slavePool.AddSlave(&Slave{
 					ip:          p.IP.String(),
-					infoReqPort: p.InfoReqPort,
+					id:          p.Port,
+					loadReqPort: p.LoadReqPort,
 					reqSendPort: p.ReqSendPort,
 				})
 				m.Logger.Info(logger.FormatLogMessage("msg", "Connection request granted", "ip", p.IP.String(), "port", portStr))

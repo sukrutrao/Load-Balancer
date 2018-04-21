@@ -21,8 +21,8 @@ const (
 	ConnectionRequest
 	ConnectionResponse
 	ConnectionAck
-	InfoRequest
-	InfoResponse
+	LoadRequest
+	LoadResponse
 	PacketTypeEnd
 )
 
@@ -34,9 +34,9 @@ func (pt PacketType) String() string {
 		return "ConnectionResponse"
 	case ConnectionAck:
 		return "ConnectionAck"
-	case InfoRequest:
+	case LoadRequest:
 		return "InfoRequest"
-	case InfoResponse:
+	case LoadResponse:
 		return "InfoResponse"
 	default:
 		return ""
@@ -52,15 +52,15 @@ type BroadcastConnectResponse struct {
 	Ack         bool
 	IP          net.IP
 	Port        uint16
-	InfoReqPort uint16
+	LoadReqPort uint16
 	ReqSendPort uint16
 }
 
-type InfoRequestPacket struct {
+type LoadRequestPacket struct {
 	Port uint16
 }
 
-type InfoResponsePacket struct {
+type LoadResponsePacket struct {
 	Timestamp time.Time
 	Load      float64
 }
@@ -81,8 +81,8 @@ func EncodePacket(packet interface{}, packetType PacketType) ([]byte, error) {
 	switch t := packet.(type) {
 	case BroadcastConnectRequest:
 	case BroadcastConnectResponse:
-	case InfoRequestPacket:
-	case InfoResponsePacket:
+	case LoadRequestPacket:
+	case LoadResponsePacket:
 	default:
 		_ = t
 		return nil, errors.New("Invalid packet")
