@@ -5,6 +5,7 @@ import (
 	"encoding/gob"
 	"errors"
 	"net"
+	"time"
 )
 
 /*
@@ -20,18 +21,48 @@ const (
 	ConnectionRequest
 	ConnectionResponse
 	ConnectionAck
+	LoadRequest
+	LoadResponse
 	PacketTypeEnd
 )
 
+func (pt PacketType) String() string {
+	switch pt {
+	case ConnectionRequest:
+		return "ConnectionRequest"
+	case ConnectionResponse:
+		return "ConnectionResponse"
+	case ConnectionAck:
+		return "ConnectionAck"
+	case LoadRequest:
+		return "InfoRequest"
+	case LoadResponse:
+		return "InfoResponse"
+	default:
+		return ""
+	}
+}
+
 type BroadcastConnectRequest struct {
 	Source net.IP
-	Port   int16
+	Port   uint16
 }
 
 type BroadcastConnectResponse struct {
-	Ack  bool
-	IP   net.IP
-	Port int16
+	Ack         bool
+	IP          net.IP
+	Port        uint16
+	LoadReqPort uint16
+	ReqSendPort uint16
+}
+
+type LoadRequestPacket struct {
+	Port uint16
+}
+
+type LoadResponsePacket struct {
+	Timestamp time.Time
+	Load      float64
 }
 
 func GetPacketType(buf []byte) (PacketType, error) {
@@ -44,9 +75,14 @@ func GetPacketType(buf []byte) (PacketType, error) {
 
 func EncodePacket(packet interface{}, packetType PacketType) ([]byte, error) {
 
+	if packetType <= PacketTypeBeg || packetType >= PacketTypeEnd {
+		return nil, errors.New("Invalid packet type")
+	}
 	switch t := packet.(type) {
 	case BroadcastConnectRequest:
 	case BroadcastConnectResponse:
+	case LoadRequestPacket:
+	case LoadResponsePacket:
 	default:
 		_ = t
 		return nil, errors.New("Invalid packet")

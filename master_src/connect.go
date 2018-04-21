@@ -22,7 +22,6 @@ func (m *Master) connect() {
 	utility.CheckFatal(err, m.Logger)
 
 	packetChan := make(chan connectionReqData)
-
 	go m.collectIncomingRequests(conn, packetChan)
 
 	end := false
@@ -33,7 +32,6 @@ func (m *Master) connect() {
 			// TODO: end connection with slaves.
 			m.Logger.Info(logger.FormatLogMessage("msg", "Stopping to accept new slave connections"))
 			end = true
-			break
 		default:
 			m.handleClient(conn, packetChan)
 		}
@@ -48,20 +46,26 @@ type connectionReqData struct {
 }
 
 func (m *Master) collectIncomingRequests(conn *net.UDPConn, packetChan chan<- connectionReqData) {
-	for {
-		var buf [2048]byte
-		n, addr, err := conn.ReadFromUDP(buf[0:])
-		if err != nil {
-			m.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from UDP"))
-			continue
-		}
+	end := false
+	for !end {
+		select {
+		case <-m.close:
+			end = true
+		default:
+			var buf [2048]byte
+			n, addr, err := conn.ReadFromUDP(buf[0:])
+			if err != nil {
+				m.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from UDP"))
+				continue
+			}
 
-		var bufCopy [2048]byte
-		copy(bufCopy[:], buf[:])
-		packetChan <- connectionReqData{
-			n:    n,
-			addr: addr,
-			buf:  bufCopy,
+			var bufCopy [2048]byte
+			copy(bufCopy[:], buf[:])
+			packetChan <- connectionReqData{
+				n:    n,
+				addr: addr,
+				buf:  bufCopy,
+			}
 		}
 	}
 }
@@ -86,8 +90,8 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 			var p packets.BroadcastConnectRequest
 			err := packets.DecodePacket(packet.buf[:packet.n], &p)
 			if err != nil {
-				m.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet", "packet",
-					"BroadcastConnectRequest", "err", err.Error()))
+				m.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+					"packet", packetType.String(), "err", err.Error()))
 				return
 			}
 
@@ -96,13 +100,16 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 
 			isAck := false
 
-			if !m.SlaveIpExists(p.Source) {
+			// TODO: instead of ip, check ip and port combination.
+			if !m.SlaveExists(p.Source, p.Port) {
 				isAck = true
 				m.unackedSlaveMtx.Lock()
 				if _, ok := m.unackedSlaves[p.Source.String()+":"+portStr]; !ok {
 					m.unackedSlaves[p.Source.String()+":"+portStr] = struct{}{}
 				}
 				m.unackedSlaveMtx.Unlock()
+			} else {
+				m.Logger.Warning(logger.FormatLogMessage("msg", "Multiple request for connection", "ip", p.Source.String()))
 			}
 
 			addr, err := net.ResolveUDPAddr("udp4", p.Source.String()+":"+portStr)
@@ -128,8 +135,8 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 			var p packets.BroadcastConnectResponse
 			err := packets.DecodePacket(packet.buf[:packet.n], &p)
 			if err != nil {
-				m.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet", "packet",
-					"BroadcastConnectResponse", "err", err.Error()))
+				m.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+					"packet", packetType.String(), "err", err.Error()))
 				return
 			}
 
@@ -140,7 +147,10 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 				delete(m.unackedSlaves, p.IP.String()+":"+portStr)
 				m.unackedSlaveMtx.Unlock()
 				m.slavePool.AddSlave(&Slave{
-					ip: p.IP.String(),
+					ip:          p.IP.String(),
+					id:          p.Port,
+					loadReqPort: p.LoadReqPort,
+					reqSendPort: p.ReqSendPort,
 				})
 				m.Logger.Info(logger.FormatLogMessage("msg", "Connection request granted", "ip", p.IP.String(), "port", portStr))
 			} else {

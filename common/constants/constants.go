@@ -12,15 +12,15 @@ var (
 
 // Ports
 const (
-	MasterBroadcastPort int16 = 3000
-	SlaveBroadcastPort  int16 = 3001
-	InfoSenderPort      int16 = 3002
-	InfoReceiverPort    int16 = 3003
+	MasterBroadcastPort uint16 = 3000
 )
 
 // Timeouts
 const (
-	WaitForSlaveTimeout time.Duration = 5 * time.Second
+	WaitForSlaveTimeout       time.Duration = 5 * time.Second
+	WaitForReqTimeout                       = 5 * time.Second
+	LoadRequestInterval                     = 5 * time.Second
+	GarbageCollectionInterval               = 5 * time.Second
 )
 
 // Others

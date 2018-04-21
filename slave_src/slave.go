@@ -2,6 +2,7 @@ package slave
 
 import (
 	"net"
+	"sync"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/utility"
@@ -17,15 +18,27 @@ type Master struct {
 type Slave struct {
 	myIP        net.IP
 	broadcastIP net.IP
-	close       chan struct{}
-	Logger      *logging.Logger
+	loadReqPort uint16
+	reqSendPort uint16
+	master      Master
+
+	Logger *logging.Logger
+
+	close     chan struct{}
+	closeWait sync.WaitGroup
+}
+
+func (s *Slave) initDS() {
+	s.close = make(chan struct{})
 }
 
 // Run starts the slave
 func (s *Slave) Run() {
+	s.initDS()
 	s.Logger.Info(logger.FormatLogMessage("msg", "Slave running"))
 	s.updateAddress()
 	s.connect()
+	s.closeWait.Wait()
 }
 
 func (s *Slave) updateAddress() {
@@ -38,4 +51,10 @@ func (s *Slave) updateAddress() {
 	for i, b := range ipnet.Mask {
 		s.broadcastIP = append(s.broadcastIP, (s.myIP[i] | (^b)))
 	}
+}
+
+func (s *Slave) Close() {
+	s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
+	close(s.close)
+	s.closeWait.Wait()
 }
