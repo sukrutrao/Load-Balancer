@@ -16,28 +16,6 @@ const (
 )
 
 type PacketType int8
-type Status int8
-
-// Types
-const (
-	ConnectionRequest PacketType = iota
-	ConnectionResponse
-	TaskRequest
-	TaskRequestResponse
-	TaskResultResponse
-	TaskStatusRequest
-	TaskStatusResponse
-)
-
-// Status codes
-// TODO can we extend this for responses on whether to accept a task?
-// would give it finer granularity
-// specify an estimate when the slave might be free, so the master can query again?
-const (
-	Complete Status = iota
-	Incomplete
-	Invalid
-)
 
 // Timeouts
 const (

@@ -20,7 +20,8 @@ type Master struct {
 	broadcastIP     net.IP
 	slavePool       *SlavePool
 	Logger          *logging.Logger
-	tasks           map[int]Task
+	tasks           map[int]struct{}
+	lastTaskId      int
 	unackedSlaves   map[string]struct{}
 	unackedSlaveMtx sync.RWMutex
 
@@ -28,13 +29,13 @@ type Master struct {
 	closeWait sync.WaitGroup
 }
 
-type Task struct {
+type MasterTask struct {
 	TaskId     int
 	Task       string
 	Load       int
 	AssignedTo *Slave
 	IsAssigned bool
-	TaskStatus constants.Status
+	TaskStatus Status
 }
 
 func (m *Master) initDS() {
@@ -105,6 +106,9 @@ type Slave struct {
 	reqSendPort uint16
 	Logger      *logging.Logger
 
+	sendChan chan struct{}
+	recvChan chan struct{}
+
 	load              float64
 	lastLoadTimestamp time.Time
 	mtx               sync.RWMutex
@@ -124,6 +128,8 @@ func (s *Slave) UpdateLoad(l float64, ts time.Time) {
 
 func (s *Slave) InitDS() {
 	s.close = make(chan struct{})
+	s.sendChan = make(chan struct{})
+	s.recvChan = make(chan struct{})
 }
 
 func (s *Slave) InitConnections() error {

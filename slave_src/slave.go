@@ -5,6 +5,7 @@ import (
 	"sync"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
+	"github.com/GoodDeeds/load-balancer/common/packets"
 	"github.com/GoodDeeds/load-balancer/common/utility"
 	"github.com/op/go-logging"
 )
@@ -24,21 +25,19 @@ type Slave struct {
 
 	Logger *logging.Logger
 
-	close     chan struct{}
-	closeWait sync.WaitGroup
-	tasks     map[int]Task
+	close       chan struct{}
+	closeWait   sync.WaitGroup
+	tasks       map[int]Task
+	currentLoad int
+	maxLoad     int
 }
 
 type Task struct {
 	TaskId     int
 	Task       string
 	Load       int
-	TaskStatus constants.Status
-	Result     *TaskResult
-}
-
-type TaskResult struct {
-	Result string
+	TaskStatus packets.Status
+	Result     *packets.TaskResult
 }
 
 func (s *Slave) initDS() {

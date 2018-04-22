@@ -15,6 +15,7 @@ import (
 
 // Types
 type PacketType uint8
+type Status int8
 
 const (
 	PacketTypeBeg PacketType = iota
@@ -23,7 +24,22 @@ const (
 	ConnectionAck
 	LoadRequest
 	LoadResponse
+	TaskRequest
+	TaskRequestResponse
+	TaskResultResponse
+	TaskStatusRequest
+	TaskStatusResponse
 	PacketTypeEnd
+)
+
+// Status codes
+// TODO can we extend this for responses on whether to accept a task?
+// would give it finer granularity
+// specify an estimate when the slave might be free, so the master can query again?
+const (
+	Complete Status = iota
+	Incomplete
+	Invalid
 )
 
 func (pt PacketType) String() string {
@@ -107,27 +123,32 @@ func DecodePacket(buf []byte, packet interface{}) error {
 	return err
 }
 
-type TaskRequest struct {
+type TaskRequestPacket struct {
 	TaskId int
 	Task   string // TODO - change this
 	Load   int
 }
 
-type TaskRequestResponse struct {
+type TaskRequestResponsePacket struct {
 	TaskId int
 	Accept bool
 }
 
-type TaskResultResponse struct {
+type TaskResultResponsePacket struct {
 	TaskId int
 	Result TaskResult
 }
 
-type TaskStatusRequest struct {
+type TaskStatusRequestPacket struct {
 	TaskId int
 }
 
-type TaskStatusResponse struct {
+type TaskStatusResponsePacket struct {
 	TaskId     int
 	TaskStatus Status // from status constants in constants.go
+}
+
+// TODO - this should be in slave.go
+type TaskResult struct {
+	Result string
 }
