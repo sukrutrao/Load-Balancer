@@ -42,6 +42,11 @@ type Task struct {
 
 func (s *Slave) initDS() {
 	s.close = make(chan struct{})
+
+}
+
+type TaskResult struct {
+	Result string
 }
 
 // Run starts the slave

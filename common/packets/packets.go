@@ -40,7 +40,13 @@ const (
 	Complete Status = iota
 	Incomplete
 	Invalid
+	Unassigned
 )
+
+type PacketTransmit struct {
+	packet     struct{}
+	packetType packets.PacketType
+}
 
 func (pt PacketType) String() string {
 	switch pt {
@@ -121,6 +127,11 @@ func DecodePacket(buf []byte, packet interface{}) error {
 
 	err := dec.Decode(packet)
 	return err
+}
+
+func createPacketTransmit(packet interface{}, packetType PacketType) PacketTransmit {
+	pt := PacketTransmit{packet, packetType}
+	return pt
 }
 
 type TaskRequestPacket struct {

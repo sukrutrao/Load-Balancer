@@ -24,6 +24,7 @@ type Master struct {
 	lastTaskId      int
 	unackedSlaves   map[string]struct{}
 	unackedSlaveMtx sync.RWMutex
+	loadBalancer    *LoadBalancerBase
 
 	close     chan struct{}
 	closeWait sync.WaitGroup
@@ -98,6 +99,17 @@ func (m *Master) Close() {
 	m.closeWait.Wait()
 }
 
+// create task, find whom to assign, and send to that slave's channel
+func (m *Master) assignNewTask(task string, load int) error {
+	t := m.createTask(task, load)
+	s := m.assignTask(t)
+	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task, "Slave", *s.id))
+	p := m.assignTaskPacket(t)
+	pt := packets.createPacketTransmit(p, packets.TaskRequest)
+	s.sendChan <- pt
+	return nil
+}
+
 // Slave is used to store info of slave node connected to it
 type Slave struct {
 	ip          string
@@ -130,6 +142,8 @@ func (s *Slave) InitDS() {
 	s.close = make(chan struct{})
 	s.sendChan = make(chan struct{})
 	s.recvChan = make(chan struct{})
+	go s.sendChannelHandler()
+	go s.recvChannelHandler()
 }
 
 func (s *Slave) InitConnections() error {
@@ -234,6 +248,26 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 func (s *Slave) Close() {
 	close(s.close)
 	s.closeWait.Wait()
+}
+
+func (s *Slave) sendChannelHandler() {
+	pt := <-s.sendChan
+	enc, err := packets.EncodePacket(pt.packet, pt.packetType)
+	if err != nil {
+		// TODO handle error
+	}
+	// TODO send via conn
+}
+
+func (s *Slave) recvChannelHandler() {
+	recv := <-s.recvChan
+	packetType := packets.GetPacketType(pt)
+	// TODO need to use packettype with switch case? to decode
+	err := packets.DecodePacket(recv, p)
+	if err != nil {
+		// TODO handle error
+	}
+	// TODO once packet received, handle it
 }
 
 // TODO: regularly send info request to all slaves.

@@ -1,7 +1,7 @@
 package slave
 
 import (
-	/*"net"*/
+	"net"
 
 	"github.com/GoodDeeds/load-balancer/common/constants"
 	"github.com/GoodDeeds/load-balancer/common/packets"
@@ -36,5 +36,5 @@ func (s *Slave) sendTaskResult(t *Task, p interface{}) err {
 
 func (s *Slave) getStatus(taskId int) (status constants.Status) {
 	task := s.Tasks[taskId]
-
+	// TODO
 }
