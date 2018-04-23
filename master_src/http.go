@@ -6,38 +6,59 @@ import (
 	"strconv"
 
 	"github.com/GoodDeeds/load-balancer/common/constants"
+	"github.com/GoodDeeds/load-balancer/common/logger"
+	"github.com/op/go-logging"
 )
 
-type HandlerFuncPair struct {
-	Path        string
-	HandlerFunc func(w http.ResponseWriter, r *http.Request)
-}
-
 type HTTPOptions struct {
-	Handlers []*HandlerFuncPair
+	Logger *logging.Logger
 }
 
-var defaultOptions *HTTPOptions = &HTTPOptions{
-	Handlers: []*HandlerFuncPair{
-		{"/helloworld", helloWorld},
-	},
+type Handler struct {
+	m      *Master
+	server *http.Server
+	opts   *HTTPOptions
 }
 
-func DefaultOptions() *HTTPOptions {
-	return defaultOptions
-}
+func (m *Master) StartServer(opts *HTTPOptions) {
 
-func StartServer(opts *HTTPOptions) {
-
-	for _, h := range opts.Handlers {
-		http.HandleFunc(h.Path, h.HandlerFunc)
+	m.serverHandler = &Handler{
+		m:    m,
+		opts: opts,
 	}
 
 	listenPortStr := ":" + strconv.Itoa(int(constants.HTTPServerPort))
-	http.ListenAndServe(listenPortStr, nil)
+	m.serverHandler.server = &http.Server{Addr: listenPortStr}
+
+	http.HandleFunc("/ok", m.serverHandler.serverOk)
+	http.HandleFunc("/test", m.serverHandler.testRequest)
+
+	m.Logger.Info(logger.FormatLogMessage("msg", "Starting the server"))
+
+	m.closeWait.Add(1)
+	go func() {
+		if err := m.serverHandler.server.ListenAndServe(); err != nil {
+			m.Logger.Error(logger.FormatLogMessage("msg", "ListenAndServe()", "err", err.Error()))
+			select {
+			case <-m.close:
+			default:
+				close(m.close)
+			}
+		}
+		m.Logger.Info(logger.FormatLogMessage("msg", "Shutting down server"))
+		m.closeWait.Done()
+	}()
 
 }
 
-func helloWorld(w http.ResponseWriter, r *http.Request) {
-	fmt.Fprint(w, "Hello world!")
+func (h *Handler) serverOk(w http.ResponseWriter, r *http.Request) {
+	fmt.Fprint(w, "Server is running")
+}
+
+func (h *Handler) testRequest(w http.ResponseWriter, r *http.Request) {
+	// h.m.assignNewTask("test", 3.1415)
+}
+
+func (h *Handler) Shutdown() error {
+	return h.server.Shutdown(nil)
 }

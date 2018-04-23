@@ -2,6 +2,8 @@ package slave
 
 import (
 	"net"
+	"os"
+	"os/signal"
 	"sync"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -34,10 +36,24 @@ func (s *Slave) initDS() {
 
 // Run starts the slave
 func (s *Slave) Run() {
+
+	{ // Handling ctrl+C for graceful shutdown.
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		go func() {
+			<-c
+			s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
+			close(s.close)
+		}()
+	}
+
 	s.initDS()
 	s.Logger.Info(logger.FormatLogMessage("msg", "Slave running"))
 	s.updateAddress()
-	s.connect()
+	if err := s.connect(); err != nil {
+		s.Logger.Error(logger.FormatLogMessage("msg", "Failed to connect to master", "err", err.Error()))
+		s.Close()
+	}
 	s.closeWait.Wait()
 }
 
