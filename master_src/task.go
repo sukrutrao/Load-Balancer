@@ -4,72 +4,43 @@ import (
 	/*	"net"
 
 		"github.com/GoodDeeds/load-balancer/common/constants"*/
+	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/packets"
 )
 
-type TaskRequestPacket struct {
-	TaskId int
-	Task   string // TODO - change this
-	Load   int
-}
-
-type TaskRequestResponsePacket struct {
-	TaskId int
-	Accept bool
-}
-
-type TaskResultResponsePacket struct {
-	TaskId int
-	Result TaskResult
-}
-
-type TaskStatusRequestPacket struct {
-	TaskId int
-}
-
-type TaskStatusResponsePacket struct {
-	TaskId     int
-	TaskStatus Status // from status constants in constants.go
-}
-
-// Status codes
-// TODO can we extend this for responses on whether to accept a task?
-// would give it finer granularity
-// specify an estimate when the slave might be free, so the master can query again?
-const (
-	Complete Status = iota
-	Incomplete
-	Invalid
-	Unassigned
-)
-
-// TODO - this should be in slave.go
-type TaskResult struct {
-	Result string
-}
-
-func (m *Master) assignTaskPacket(t *MasterTask) interface{} {
+func (m *Master) assignTaskPacket(t *MasterTask) packets.TaskRequestPacket {
 	packet := packets.TaskRequestPacket{t.TaskId, t.Task, t.Load}
 	return packet
 }
 
 // not sure if this is needed
 // requests slave to provide status of a task assigned to it
-func (m *Master) requestTaskStatusPacket(t *MasterTask) interface{} {
+func (m *Master) requestTaskStatusPacket(t *MasterTask) packets.TaskStatusRequestPacket {
 	packet := packets.TaskStatusRequestPacket{t.TaskId}
 	return packet
 }
 
 // receives task status response, does not do anything right now
-func (m *Master) handleTaskStatusResponse(packet interface{}) {
+func (s *Slave) handleTaskStatusResponse(packet packets.TaskStatusResponsePacket) {
 	// TODO - what do you do once you get the status?
 }
 
+func (s *Slave) handleTaskRequestResponse(packet packets.TaskRequestResponsePacket) {
+	if !packet.Accept {
+		s.Logger.Warning(logger.FormatLogMessage("msg", "Slave did not accept task", "Task ID", string(packet.TaskId)))
+	} else {
+		s.Logger.Info(logger.FormatLogMessage("msg", "Slave accepted task", "Task ID", string(packet.TaskId)))
+	}
+}
+
 // recieves result of task from slave and displays it
-func (m *Master) handleTaskResult(packet interface{}) {
-	resultPacket := TaskResultResponsePacket{packet}
-	m.Logger.Info(logger.FormatLogMessage("Task ID completed", *resultPacket.TaskId))
-	m.Logger.Info(logger.FormatLogMessage("Result", *resultPacket.Result.Result))
+func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
+	// resultPacket, ok := packet.(packets.TaskResultResponsePacket)
+	// if !ok {
+	// 	// TODO - handle error
+	// }
+	s.Logger.Info(logger.FormatLogMessage("Task ID completed", string(packet.TaskId)))
+	s.Logger.Info(logger.FormatLogMessage("Result", packet.Result))
 	// TODO do something more meaningful
 }
 
@@ -81,15 +52,15 @@ func (m *Master) createTask(task string, load int) *MasterTask {
 		Load:       load,
 		AssignedTo: nil,
 		IsAssigned: false,
-		TaskStatus: Unassigned}
+		TaskStatus: packets.Unassigned}
 	m.tasks[taskId] = t
-	return t
+	return &t // TODO - is this safe?
 }
 
 // takes a task, finds which slave to assign to, assigns it in task packet, and returns slave index
-func (m *Master) assignTask(t *Task) *Slave {
+func (m *Master) assignTask(t *MasterTask) *Slave {
 	slaveAssigned := m.slavePool.slaves[0] // TODO Fix this based on algorithm for load balancing
-	*t.AssignedTo = slaveAssigned
-	*t.IsAssigned = true
+	t.AssignedTo = slaveAssigned
+	t.IsAssigned = true
 	return slaveAssigned
 }

@@ -22,22 +22,22 @@ type Slave struct {
 	loadReqPort uint16
 	reqSendPort uint16
 	master      Master
+	currentLoad int
+	maxLoad     int
 
 	Logger *logging.Logger
 
-	close       chan struct{}
-	closeWait   sync.WaitGroup
-	tasks       map[int]Task
-	currentLoad int
-	maxLoad     int
+	close     chan struct{}
+	closeWait sync.WaitGroup
+	tasks     map[int]SlaveTask
 }
 
-type Task struct {
+type SlaveTask struct {
 	TaskId     int
 	Task       string
 	Load       int
 	TaskStatus packets.Status
-	Result     *packets.TaskResult
+	Result     string //*packets.TaskResult
 }
 
 func (s *Slave) initDS() {

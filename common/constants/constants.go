@@ -23,6 +23,7 @@ const (
 	WaitForReqTimeout                       = 5 * time.Second
 	LoadRequestInterval                     = 5 * time.Second
 	GarbageCollectionInterval               = 5 * time.Second
+	TaskInterval                            = 5 * time.Second
 )
 
 // Others

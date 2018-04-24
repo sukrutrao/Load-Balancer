@@ -44,8 +44,8 @@ const (
 )
 
 type PacketTransmit struct {
-	packet     struct{}
-	packetType packets.PacketType
+	Packet     interface{}
+	PacketType PacketType
 }
 
 func (pt PacketType) String() string {
@@ -60,6 +60,16 @@ func (pt PacketType) String() string {
 		return "InfoRequest"
 	case LoadResponse:
 		return "InfoResponse"
+	case TaskRequest:
+		return "AssignTaskToSlave"
+	case TaskRequestResponse:
+		return "SlaveReplyToTaskAssignment"
+	case TaskResultResponse:
+		return "TaskResultFromSlave"
+	case TaskStatusRequest:
+		return "AskSlaveForTaskStatus"
+	case TaskStatusResponse:
+		return "SlaveReplyTaskStatus"
 	default:
 		return ""
 	}
@@ -105,6 +115,11 @@ func EncodePacket(packet interface{}, packetType PacketType) ([]byte, error) {
 	case BroadcastConnectResponse:
 	case LoadRequestPacket:
 	case LoadResponsePacket:
+	case TaskRequestPacket:
+	case TaskRequestResponsePacket:
+	case TaskResultResponsePacket:
+	case TaskStatusRequestPacket:
+	case TaskStatusResponsePacket:
 	default:
 		_ = t
 		return nil, errors.New("Invalid packet")
@@ -129,7 +144,7 @@ func DecodePacket(buf []byte, packet interface{}) error {
 	return err
 }
 
-func createPacketTransmit(packet interface{}, packetType PacketType) PacketTransmit {
+func CreatePacketTransmit(packet interface{}, packetType PacketType) PacketTransmit {
 	pt := PacketTransmit{packet, packetType}
 	return pt
 }
@@ -146,8 +161,9 @@ type TaskRequestResponsePacket struct {
 }
 
 type TaskResultResponsePacket struct {
-	TaskId int
-	Result TaskResult
+	TaskId     int
+	Result     string // TODO - change this
+	TaskStatus Status
 }
 
 type TaskStatusRequestPacket struct {
