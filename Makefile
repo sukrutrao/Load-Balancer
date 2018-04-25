@@ -31,4 +31,4 @@ run_slave:
 	prometheus --config.file="config/prometheus.yml" 2> prometheus.log & ./slave
 
 run_monitoring:
-	./monitoring
+	sudo systemctl start grafana-server & ./monitoring

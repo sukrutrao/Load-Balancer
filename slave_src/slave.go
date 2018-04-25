@@ -11,7 +11,7 @@ import (
 
 // Master is used to store info of master node
 type Master struct {
-	ip string
+	ip net.IP
 }
 
 // Slave is used to store info of slave node which is currently running
@@ -35,8 +35,8 @@ func (s *Slave) initDS() {
 // Run starts the slave
 func (s *Slave) Run() {
 	s.initDS()
-	s.Logger.Info(logger.FormatLogMessage("msg", "Slave running"))
 	s.updateAddress()
+	s.Logger.Info(logger.FormatLogMessage("msg", "Slave running"))
 	s.connect()
 	s.closeWait.Wait()
 }

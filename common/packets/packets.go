@@ -23,6 +23,11 @@ const (
 	ConnectionAck
 	LoadRequest
 	LoadResponse
+	MonitorConnectionRequest
+	MonitorConnectionResponse
+	MonitorConnectionAck
+	MonitorRequest
+	MonitorResponse
 	PacketTypeEnd
 )
 
@@ -38,6 +43,16 @@ func (pt PacketType) String() string {
 		return "InfoRequest"
 	case LoadResponse:
 		return "InfoResponse"
+	case MonitorConnectionRequest:
+		return "MonitorConnectionRequest"
+	case MonitorConnectionResponse:
+		return "MonitorConnectionResponse"
+	case MonitorConnectionAck:
+		return "MonitorConnectionAck"
+	case MonitorRequest:
+		return "MonitorRequest"
+	case MonitorResponse:
+		return "MonitorResponse"
 	default:
 		return ""
 	}
@@ -49,8 +64,10 @@ type BroadcastConnectRequest struct {
 }
 
 type BroadcastConnectResponse struct {
-	Ack         bool
-	IP          net.IP
+	Ack bool
+	IP  net.IP
+
+	// Used only by Slave.
 	Port        uint16
 	LoadReqPort uint16
 	ReqSendPort uint16
@@ -63,6 +80,13 @@ type LoadRequestPacket struct {
 type LoadResponsePacket struct {
 	Timestamp time.Time
 	Load      float64
+}
+
+type MonitorRequestPacket struct {
+}
+
+type MonitorResponsePacket struct {
+	SlaveIPs []string
 }
 
 func GetPacketType(buf []byte) (PacketType, error) {
@@ -83,6 +107,8 @@ func EncodePacket(packet interface{}, packetType PacketType) ([]byte, error) {
 	case BroadcastConnectResponse:
 	case LoadRequestPacket:
 	case LoadResponsePacket:
+	case MonitorRequestPacket:
+	case MonitorResponsePacket:
 	default:
 		_ = t
 		return nil, errors.New("Invalid packet")
