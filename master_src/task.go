@@ -58,7 +58,11 @@ func (m *Master) createTask(task string, load int) *MasterTask {
 
 // takes a task, finds which slave to assign to, assigns it in task packet, and returns slave index
 func (m *Master) assignTask(t *MasterTask) *Slave {
-	slaveAssigned := m.slavePool.slaves[0] // TODO Fix this based on algorithm for load balancing
+	slaveAssigned, err := m.loadBalancer.assignTask(t.Load) // m.slavePool.slaves[0] // TODO Fix this based on algorithm for load balancing
+	if err != nil {
+		m.Logger.Fatal(logger.FormatLogMessage("err", "Assign Task Failed, Handle Error TODO", "error", err.Error()))
+		// TODO Handle error
+	}
 	t.AssignedTo = slaveAssigned
 	t.IsAssigned = true
 	return slaveAssigned

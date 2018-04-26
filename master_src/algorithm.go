@@ -8,7 +8,7 @@ import (
 // 	"github.com/GoodDeeds/load-balancer/master_src"
 // )
 
-type LoadBalancerFunctions interface {
+type LoadBalancerInterface interface {
 	// addSlave(slave *slave.Slave) (*Slave, error)
 	// removeSlave(id int) error
 	assignTask(load int) (*Slave, error)
@@ -16,7 +16,7 @@ type LoadBalancerFunctions interface {
 }
 
 type LoadBalancerBase struct {
-	slavePool *SlavePool // TODO init this
+	slavePool *SlavePool
 }
 
 // func (l *LoadBalancerBase) addSlave(slave *Slave) (*Slave, error) {

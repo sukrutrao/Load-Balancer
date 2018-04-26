@@ -24,7 +24,7 @@ type Master struct {
 	lastTaskId      int
 	unackedSlaves   map[string]struct{}
 	unackedSlaveMtx sync.RWMutex
-	loadBalancer    *LoadBalancerBase
+	loadBalancer    LoadBalancerInterface
 
 	close     chan struct{}
 	closeWait sync.WaitGroup
@@ -49,6 +49,7 @@ func (m *Master) initDS() {
 	}
 	m.tasks = make(map[int]MasterTask)
 	m.lastTaskId = 0
+	m.loadBalancer = &RoundRobin{&LoadBalancerBase{slavePool: m.slavePool}, -1}
 }
 
 // run master
@@ -156,6 +157,8 @@ func (s *Slave) UpdateLoad(l float64, ts time.Time) {
 func (s *Slave) InitDS() {
 	s.close = make(chan struct{})
 	s.sendChan = make(chan packets.PacketTransmit)
+	s.currentLoad = 0
+	s.maxLoad = 1000
 	//	s.recvChan = make(chan struct{})
 	//	go s.sendChannelHandler()
 	//	go s.recvChannelHandler()

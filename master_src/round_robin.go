@@ -2,6 +2,7 @@ package master
 
 import (
 	"errors"
+	"fmt"
 )
 
 type RoundRobin struct {
@@ -12,6 +13,17 @@ type RoundRobin struct {
 // TODO - need locks here?
 func (r *RoundRobin) assignTask(load int) (*Slave, error) {
 	// TODO - need to lock Slavepool!!!
+	if len(r.slavePool.slaves) == 0 {
+		return nil, errors.New("No Slaves available")
+	}
+	if len(r.slavePool.slaves) == 1 {
+		fmt.Println("Number of slaves is 1")
+		if r.slavePool.slaves[0].currentLoad+load <= r.slavePool.slaves[0].maxLoad {
+			r.slavePool.slaves[0].currentLoad += load
+			r.lastAssigned = 0
+			return r.slavePool.slaves[0], nil
+		}
+	}
 	nextIdTry := (r.lastAssigned + 1) % len(r.slavePool.slaves)
 	if r.slavePool.slaves[nextIdTry].currentLoad+load <= r.slavePool.slaves[nextIdTry].maxLoad {
 		r.slavePool.slaves[nextIdTry].currentLoad += load
