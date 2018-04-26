@@ -17,3 +17,5 @@ master
 slave
 monitoring
 .vscode
+*.log
+data

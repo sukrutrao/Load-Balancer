@@ -54,9 +54,11 @@ func (s *Slave) connect() error {
 
 		var buf [2048]byte
 		// TODO: add timeout
+		connRecv.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 		n, _, err := connRecv.ReadFromUDP(buf[:])
 		if err != nil {
 			s.Logger.Error(logger.FormatLogMessage("err", err.Error()))
+			tries++
 			continue
 		}
 
@@ -64,6 +66,7 @@ func (s *Slave) connect() error {
 		if err != nil {
 			s.Logger.Error(logger.FormatLogMessage("err", err.Error()))
 			p.Ack = false
+			tries++
 			continue
 		}
 
@@ -137,6 +140,7 @@ func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData
 		default:
 			var buf [2048]byte
 			// TODO: add timeout
+			conn.SetReadDeadline(time.Now().Add(constants.SlaveReceiveTimeout))
 			n, err := conn.Read(buf[0:])
 			if err != nil {
 				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
@@ -166,6 +170,7 @@ func (s *Slave) initLoadListener() error {
 		return err
 	}
 
+	s.closeWait.Add(1)
 	go s.loadListenManager(ln)
 
 	port := ln.Addr().(*net.TCPAddr).Port
@@ -174,9 +179,9 @@ func (s *Slave) initLoadListener() error {
 }
 
 func (s *Slave) loadListenManager(ln net.Listener) {
-	s.closeWait.Add(1)
 
 	// TODO: handle error in accept
+	ln.(*net.TCPListener).SetDeadline(time.Now().Add(constants.SlaveConnectionAcceptTimeout))
 	conn, _ := ln.Accept()
 
 	packetChan := make(chan tcpData)
@@ -259,6 +264,7 @@ func (s *Slave) initReqListener() error {
 		return err
 	}
 
+	s.closeWait.Add(1)
 	go s.reqListenManager(ln)
 
 	port := ln.Addr().(*net.TCPAddr).Port
@@ -267,9 +273,9 @@ func (s *Slave) initReqListener() error {
 }
 
 func (s *Slave) reqListenManager(ln net.Listener) {
-	s.closeWait.Add(1)
 
 	// TODO: handle error in accept
+	ln.(*net.TCPListener).SetDeadline(time.Now().Add(constants.SlaveConnectionAcceptTimeout))
 	conn, _ := ln.Accept()
 
 	packetChan := make(chan tcpData)

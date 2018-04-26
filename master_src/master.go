@@ -3,6 +3,8 @@ package master
 import (
 	"io"
 	"net"
+	"os"
+	"os/signal"
 	"strconv"
 	"sync"
 	"time"
@@ -22,6 +24,9 @@ type Master struct {
 	Logger          *logging.Logger
 	tasks           map[int]MasterTask
 	lastTaskId      int
+
+	serverHandler *Handler
+
 	unackedSlaves   map[string]struct{}
 	unackedSlaveMtx sync.RWMutex
 	loadBalancer    *LoadBalancerBase
@@ -53,8 +58,23 @@ func (m *Master) initDS() {
 
 // run master
 func (m *Master) Run() {
+
+	{ // Handling ctrl+C for graceful shutdown.
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		go func() {
+			<-c
+			m.Logger.Info(logger.FormatLogMessage("msg", "Closing Master gracefully..."))
+			close(m.close)
+		}()
+	}
+
 	m.initDS()
 	m.updateAddress()
+	m.StartServer(&HTTPOptions{
+		Logger: m.Logger,
+	})
+	m.closeWait.Add(2)
 	go m.connect()
 	go m.gc_routine()
 	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
@@ -97,16 +117,27 @@ func (m *Master) gc_routine() {
 		}
 		<-time.After(constants.GarbageCollectionInterval)
 	}
+	m.closeWait.Done()
 }
 
 func (m *Master) Close() {
 	m.Logger.Info(logger.FormatLogMessage("msg", "Closing Master gracefully..."))
+
+	// First stopping to accept any more tasks.
+	if err := m.serverHandler.Shutdown(); err != nil {
+		m.Logger.Error(logger.FormatLogMessage("msg", "Failed to ShutDown the server", "err", err.Error()))
+	}
+
+	// Closing all work of master.
 	select {
 	case <-m.close:
 	default:
 		close(m.close)
 	}
+
+	// Closing all slaves.
 	m.slavePool.Close(m.Logger)
+
 	m.closeWait.Wait()
 }
 
@@ -162,6 +193,7 @@ func (s *Slave) InitDS() {
 }
 
 func (s *Slave) InitConnections() error {
+	s.closeWait.Add(1)
 	go s.loadRequestHandler()
 	go s.taskRequestHandler()
 	// go s.requestHandler()
@@ -169,7 +201,6 @@ func (s *Slave) InitConnections() error {
 }
 
 func (s *Slave) loadRequestHandler() {
-	s.closeWait.Add(1)
 
 	address := s.ip + ":" + strconv.Itoa(int(s.loadReqPort))
 	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
@@ -179,6 +210,7 @@ func (s *Slave) loadRequestHandler() {
 		close(s.close)
 	}
 
+	s.closeWait.Add(1)
 	go s.loadRecvAndUpdater(conn)
 
 	end := false
@@ -208,7 +240,6 @@ func (s *Slave) loadRequestHandler() {
 }
 
 func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
-	s.closeWait.Add(1)
 	end := false
 	for !end {
 		select {
