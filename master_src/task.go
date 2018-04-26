@@ -1,9 +1,8 @@
 package master
 
 import (
-	/*	"net"
+	"strconv"
 
-		"github.com/GoodDeeds/load-balancer/common/constants"*/
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/packets"
 )
@@ -27,9 +26,9 @@ func (s *Slave) handleTaskStatusResponse(packet packets.TaskStatusResponsePacket
 
 func (s *Slave) handleTaskRequestResponse(packet packets.TaskRequestResponsePacket) {
 	if !packet.Accept {
-		s.Logger.Warning(logger.FormatLogMessage("msg", "Slave did not accept task", "Task ID", string(packet.TaskId)))
+		s.Logger.Warning(logger.FormatLogMessage("msg", "Slave did not accept task", "Task ID", strconv.Itoa(int(packet.TaskId))))
 	} else {
-		s.Logger.Info(logger.FormatLogMessage("msg", "Slave accepted task", "Task ID", string(packet.TaskId)))
+		s.Logger.Info(logger.FormatLogMessage("msg", "Slave accepted task", "Task ID", strconv.Itoa(int(packet.TaskId))))
 	}
 }
 
@@ -39,8 +38,7 @@ func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
 	// if !ok {
 	// 	// TODO - handle error
 	// }
-	s.Logger.Info(logger.FormatLogMessage("Task ID completed", string(packet.TaskId)))
-	s.Logger.Info(logger.FormatLogMessage("Result", packet.Result))
+	s.Logger.Info(logger.FormatLogMessage("Task ID completed", strconv.Itoa(int(packet.TaskId)), "Result", packet.Result))
 	// TODO do something more meaningful
 }
 
@@ -54,6 +52,7 @@ func (m *Master) createTask(task string, load int) *MasterTask {
 		IsAssigned: false,
 		TaskStatus: packets.Unassigned}
 	m.tasks[taskId] = t
+	m.lastTaskId += 1
 	return &t // TODO - is this safe?
 }
 

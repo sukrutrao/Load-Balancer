@@ -24,6 +24,7 @@ type Slave struct {
 	master      Master
 	currentLoad int
 	maxLoad     int
+	sendChan    chan packets.PacketTransmit
 
 	Logger *logging.Logger
 
@@ -42,7 +43,10 @@ type SlaveTask struct {
 
 func (s *Slave) initDS() {
 	s.close = make(chan struct{})
-
+	s.currentLoad = 0
+	s.maxLoad = 1000
+	s.tasks = make(map[int]SlaveTask)
+	s.sendChan = make(chan packets.PacketTransmit)
 }
 
 type TaskResult struct {

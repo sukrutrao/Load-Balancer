@@ -2,6 +2,7 @@ package slave
 
 import (
 	/*	"net"*/
+	"strconv"
 	"time"
 
 	// "github.com/GoodDeeds/load-balancer/common/constants"
@@ -9,38 +10,41 @@ import (
 	"github.com/GoodDeeds/load-balancer/common/packets"
 )
 
-func (s *Slave) getTask(t *SlaveTask, p packets.TaskRequestPacket) packets.TaskRequestResponsePacket {
+func (s *Slave) getTask(p packets.TaskRequestPacket) {
 	response := packets.TaskRequestResponsePacket{TaskId: p.TaskId}
 	if s.currentLoad+p.Load > s.maxLoad {
 		response.Accept = false
-		s.Logger.Warning(logger.FormatLogMessage("msg", "Slave refused task due to load limit", "Task ID", string(p.TaskId)))
-		return response
+		s.Logger.Warning(logger.FormatLogMessage("msg", "Slave refused task due to load limit", "Task ID", strconv.Itoa(int(p.TaskId))))
 	} else {
 		t := SlaveTask{TaskId: p.TaskId, Task: p.Task, Load: p.Load, TaskStatus: packets.Incomplete}
 		go s.handleTask(&t)
 		response.Accept = true
-		s.Logger.Info(logger.FormatLogMessage("msg", "Slave accepted task", "Task ID", string(p.TaskId)))
-		return response
+		s.Logger.Info(logger.FormatLogMessage("msg", "Slave accepted task", "Task ID", strconv.Itoa(int(p.TaskId))))
 	}
+	pt := packets.CreatePacketTransmit(response, packets.TaskRequestResponse)
+	s.sendChan <- pt
 }
 
-func (s *Slave) respondTaskStatusPacket(p packets.TaskStatusRequestPacket) packets.TaskStatusResponsePacket {
+func (s *Slave) respondTaskStatusPacket(p packets.TaskStatusRequestPacket) {
 	status := s.getStatus(p.TaskId)
 	response := packets.TaskStatusResponsePacket{p.TaskId, status}
-	return response
+	pt := packets.CreatePacketTransmit(response, packets.TaskStatusResponse)
+	s.sendChan <- pt
 }
 
-func (s *Slave) sendTaskResult(t *SlaveTask) packets.TaskResultResponsePacket {
+func (s *Slave) sendTaskResult(t *SlaveTask) {
 	response := packets.TaskResultResponsePacket{TaskId: t.TaskId}
 	if t.TaskStatus != packets.Complete {
-		s.Logger.Warning("msg", "Task is not yet complete", "Task ID", string(t.TaskId))
+		s.Logger.Warning(logger.FormatLogMessage("msg", "Task is not yet complete", "Task ID", strconv.Itoa(int(t.TaskId))))
 		response.TaskStatus = packets.Incomplete
-		return response
+	} else {
+		response.Result = t.Result
+		response.TaskStatus = packets.Complete
+		s.Logger.Info(logger.FormatLogMessage("msg", "Task is complete", "Task ID", strconv.Itoa(int(t.TaskId))))
 	}
-	response.Result = t.Result
-	response.TaskStatus = packets.Complete
-	s.Logger.Warning("msg", "Task is complete", "Task ID", string(t.TaskId))
-	return response
+	pt := packets.CreatePacketTransmit(response, packets.TaskResultResponse)
+	// s.Logger.Info(logger.FormatLogMessage("msg", "Sending result to channel"))
+	s.sendChan <- pt
 }
 
 func (s *Slave) getStatus(taskId int) (status packets.Status) {
@@ -53,9 +57,10 @@ func (s *Slave) getStatus(taskId int) (status packets.Status) {
 
 func (s *Slave) handleTask(t *SlaveTask) {
 	s.currentLoad += t.Load
-	s.Logger.Info("msg", "Handling Task", "Task ID", string(t.TaskId))
+	s.Logger.Info(logger.FormatLogMessage("msg", "Handling Task", "Task ID", strconv.Itoa(int(t.TaskId))))
 	time.Sleep(10000 * time.Millisecond)
 	t.Result = "Complete"
-	s.Logger.Info("msg", "Done Task", "Task ID", string(t.TaskId))
+	t.TaskStatus = packets.Complete
+	s.Logger.Info(logger.FormatLogMessage("msg", "Done Task", "Task ID", strconv.Itoa(int(t.TaskId))))
 	go s.sendTaskResult(t)
 }

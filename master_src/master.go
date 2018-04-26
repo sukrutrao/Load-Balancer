@@ -47,6 +47,8 @@ func (m *Master) initDS() {
 	m.slavePool = &SlavePool{
 		Logger: m.Logger,
 	}
+	m.tasks = make(map[int]MasterTask)
+	m.lastTaskId = 0
 }
 
 // run master
@@ -56,7 +58,13 @@ func (m *Master) Run() {
 	go m.connect()
 	go m.gc_routine()
 	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
-
+	time.Sleep(10 * time.Second)
+	m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
+	for i := 0; i < 10; i++ {
+		m.assignNewTask("ABC", 10)
+		time.Sleep(2 * time.Second)
+	}
+	m.Logger.Info(logger.FormatLogMessage("msg", "Tasks complete"))
 	<-m.close
 	m.Close()
 }
@@ -106,7 +114,7 @@ func (m *Master) Close() {
 func (m *Master) assignNewTask(task string, load int) error {
 	t := m.createTask(task, load)
 	s := m.assignTask(t)
-	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task, "Slave", string(s.id))) // TODO - cast may not be correct
+	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task, "Slave", strconv.Itoa(int(s.id)))) // TODO - cast may not be correct
 	p := m.assignTaskPacket(t)
 	pt := packets.CreatePacketTransmit(p, packets.TaskRequest) // TODO - fix this
 	s.sendChan <- pt
@@ -126,7 +134,7 @@ type Slave struct {
 	currentLoad int
 
 	sendChan chan packets.PacketTransmit
-	recvChan chan struct{}
+	//	recvChan chan struct{}
 
 	load              float64
 	lastLoadTimestamp time.Time
@@ -148,7 +156,7 @@ func (s *Slave) UpdateLoad(l float64, ts time.Time) {
 func (s *Slave) InitDS() {
 	s.close = make(chan struct{})
 	s.sendChan = make(chan packets.PacketTransmit)
-	s.recvChan = make(chan struct{})
+	//	s.recvChan = make(chan struct{})
 	//	go s.sendChannelHandler()
 	//	go s.recvChannelHandler()
 }
@@ -164,6 +172,8 @@ func (s *Slave) loadRequestHandler() {
 	s.closeWait.Add(1)
 
 	address := s.ip + ":" + strconv.Itoa(int(s.loadReqPort))
+	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
+
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		close(s.close)
@@ -323,8 +333,11 @@ func (s *Slave) taskRequestHandler() {
 	s.closeWait.Add(1)
 
 	address := s.ip + ":" + strconv.Itoa(int(s.reqSendPort))
+	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
+
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
+		s.Logger.Fatal(logger.FormatLogMessage("Error!", "Error!"))
 		close(s.close)
 	}
 
@@ -353,7 +366,6 @@ func (s *Slave) sendChannelHandler(conn net.Conn) {
 			end = true
 		default:
 			pt := <-s.sendChan
-
 			bytes, err := packets.EncodePacket(pt.Packet, pt.PacketType)
 			if err != nil {
 				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading packet to send"))
