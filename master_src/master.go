@@ -18,28 +18,45 @@ import (
 
 // Master is used to store info of master node which is currently running
 type Master struct {
-	myIP        net.IP
-	broadcastIP net.IP
-	slavePool   *SlavePool
-	Logger      *logging.Logger
+	myIP            net.IP
+	broadcastIP     net.IP
+	slavePool       *SlavePool
+	Logger          *logging.Logger
+	tasks           map[int]MasterTask
+	lastTaskId      int
 
 	serverHandler *Handler
 
 	unackedSlaves   map[string]struct{}
 	unackedSlaveMtx sync.RWMutex
+	loadBalancer    *LoadBalancerBase
 
 	close     chan struct{}
 	closeWait sync.WaitGroup
 }
 
+// task as seen by master
+type MasterTask struct {
+	TaskId     int
+	Task       string
+	Load       int
+	AssignedTo *Slave
+	IsAssigned bool
+	TaskStatus packets.Status
+}
+
+// master constructor
 func (m *Master) initDS() {
 	m.close = make(chan struct{})
 	m.unackedSlaves = make(map[string]struct{})
 	m.slavePool = &SlavePool{
 		Logger: m.Logger,
 	}
+	m.tasks = make(map[int]MasterTask)
+	m.lastTaskId = 0
 }
 
+// run master
 func (m *Master) Run() {
 
 	{ // Handling ctrl+C for graceful shutdown.
@@ -61,7 +78,13 @@ func (m *Master) Run() {
 	go m.connect()
 	go m.gc_routine()
 	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
-
+	time.Sleep(10 * time.Second)
+	m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
+	for i := 0; i < 10; i++ {
+		m.assignNewTask("ABC", 10)
+		time.Sleep(2 * time.Second)
+	}
+	m.Logger.Info(logger.FormatLogMessage("msg", "Tasks complete"))
 	<-m.close
 	m.Close()
 }
@@ -118,6 +141,19 @@ func (m *Master) Close() {
 	m.closeWait.Wait()
 }
 
+// create task, find whom to assign, and send to that slave's channel
+func (m *Master) assignNewTask(task string, load int) error {
+	t := m.createTask(task, load)
+	s := m.assignTask(t)
+	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task, "Slave", strconv.Itoa(int(s.id)))) // TODO - cast may not be correct
+	p := m.assignTaskPacket(t)
+	pt := packets.CreatePacketTransmit(p, packets.TaskRequest) // TODO - fix this
+	s.sendChan <- pt
+	//	var packetType packets.TaskRequestPacket
+	//	s.sendChan <- packetType // TODO - this could cause issues, packaging with pt (above) would be better
+	return nil
+}
+
 // Slave is used to store info of slave node connected to it
 type Slave struct {
 	ip          string
@@ -125,6 +161,11 @@ type Slave struct {
 	loadReqPort uint16
 	reqSendPort uint16
 	Logger      *logging.Logger
+	maxLoad     int
+	currentLoad int
+
+	sendChan chan packets.PacketTransmit
+	//	recvChan chan struct{}
 
 	load              float64
 	lastLoadTimestamp time.Time
@@ -145,11 +186,16 @@ func (s *Slave) UpdateLoad(l float64, ts time.Time) {
 
 func (s *Slave) InitDS() {
 	s.close = make(chan struct{})
+	s.sendChan = make(chan packets.PacketTransmit)
+	//	s.recvChan = make(chan struct{})
+	//	go s.sendChannelHandler()
+	//	go s.recvChannelHandler()
 }
 
 func (s *Slave) InitConnections() error {
 	s.closeWait.Add(1)
 	go s.loadRequestHandler()
+	go s.taskRequestHandler()
 	// go s.requestHandler()
 	return nil
 }
@@ -157,6 +203,8 @@ func (s *Slave) InitConnections() error {
 func (s *Slave) loadRequestHandler() {
 
 	address := s.ip + ":" + strconv.Itoa(int(s.loadReqPort))
+	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
+
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		close(s.close)
@@ -241,6 +289,95 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 	s.closeWait.Done()
 }
 
+func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
+	s.closeWait.Add(1)
+	end := false
+	for !end {
+		select {
+		case <-s.close:
+			end = true
+		default:
+			var buf [2048]byte
+			// TODO: add timeout
+			n, err := conn.Read(buf[0:])
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
+				if err == io.EOF {
+					// TODO: remove myself from slavepool
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
+						"slave_id", strconv.Itoa(int(s.id))))
+					close(s.close)
+					end = true
+				}
+				continue
+			}
+
+			packetType, err := packets.GetPacketType(buf[:n])
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("err", err.Error()))
+				return
+			}
+
+			switch packetType {
+			case packets.TaskRequestResponse:
+				var p packets.TaskRequestResponsePacket
+				err := packets.DecodePacket(buf[:n], &p)
+				if err != nil {
+					s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+						"packet", packetType.String(), "err", err.Error()))
+					return
+				}
+
+				go s.handleTaskRequestResponse(p)
+
+			case packets.TaskResultResponse:
+				var p packets.TaskResultResponsePacket
+				err := packets.DecodePacket(buf[:n], &p)
+				if err != nil {
+					s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+						"packet", packetType.String(), "err", err.Error()))
+					return
+				}
+
+				go s.handleTaskResult(p)
+
+			case packets.TaskStatusResponse:
+				var p packets.TaskStatusResponsePacket
+				err := packets.DecodePacket(buf[:n], &p)
+				if err != nil {
+					s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+						"packet", packetType.String(), "err", err.Error()))
+					return
+				}
+
+				go s.handleTaskStatusResponse(p)
+
+			default:
+				s.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet"))
+			}
+		}
+	}
+	s.closeWait.Done()
+}
+
+func (s *Slave) taskRequestHandler() {
+	s.closeWait.Add(1)
+
+	address := s.ip + ":" + strconv.Itoa(int(s.reqSendPort))
+	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
+
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		s.Logger.Fatal(logger.FormatLogMessage("Error!", "Error!"))
+		close(s.close)
+	}
+
+	go s.sendChannelHandler(conn)
+	go s.taskRecvAndUpdater(conn)
+
+	s.closeWait.Done()
+}
+
 // func (s *Slave) requestHandler() {
 // 	s.closeWait.Add(1)
 // 	s.closeWait.Done()
@@ -249,6 +386,40 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 func (s *Slave) Close() {
 	close(s.close)
 	s.closeWait.Wait()
+}
+
+func (s *Slave) sendChannelHandler(conn net.Conn) {
+	s.closeWait.Add(1)
+	end := false
+	for !end {
+		select {
+		case <-s.close:
+			end = true
+		default:
+			pt := <-s.sendChan
+			bytes, err := packets.EncodePacket(pt.Packet, pt.PacketType)
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading packet to send"))
+				if err == io.EOF {
+					// TODO: remove myself from slavepool
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
+						"slave_id", strconv.Itoa(int(s.id))))
+					close(s.close)
+					end = true
+				}
+				continue
+			}
+			_, err = conn.Write(bytes)
+			if err != nil {
+				s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send packet",
+					"slave_ip", s.ip, "err", err.Error()))
+			}
+
+			<-time.After(constants.TaskInterval)
+
+		}
+	}
+	s.closeWait.Done()
 }
 
 // TODO: regularly send info request to all slaves.
