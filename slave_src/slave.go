@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
+	"github.com/GoodDeeds/load-balancer/common/packets"
 	"github.com/GoodDeeds/load-balancer/common/utility"
 	"github.com/op/go-logging"
 )
@@ -23,15 +24,35 @@ type Slave struct {
 	loadReqPort uint16
 	reqSendPort uint16
 	master      Master
+	currentLoad int
+	maxLoad     int
+	sendChan    chan packets.PacketTransmit
 
 	Logger *logging.Logger
 
 	close     chan struct{}
 	closeWait sync.WaitGroup
+	tasks     map[int]SlaveTask
+}
+
+type SlaveTask struct {
+	TaskId     int
+	Task       string
+	Load       int
+	TaskStatus packets.Status
+	Result     string //*packets.TaskResult
 }
 
 func (s *Slave) initDS() {
 	s.close = make(chan struct{})
+	s.currentLoad = 0
+	s.maxLoad = 1000
+	s.tasks = make(map[int]SlaveTask)
+	s.sendChan = make(chan packets.PacketTransmit)
+}
+
+type TaskResult struct {
+	Result string
 }
 
 // Run starts the slave

@@ -122,6 +122,7 @@ func (s *Slave) initListeners() error {
 	if err != nil {
 		return err
 	}
+	s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
 	return nil
 }
 
@@ -279,6 +280,7 @@ func (s *Slave) reqListenManager(ln net.Listener) {
 
 	packetChan := make(chan tcpData)
 	go s.collectIncomingRequests(conn, packetChan)
+	go s.sendChannelHandler(conn)
 
 	end := false
 	for !end {
@@ -314,6 +316,24 @@ func (s *Slave) reqListener(conn net.Conn, packetChan <-chan tcpData) {
 		// Structure
 		// case packets.ThePacketType:
 		// Get packet from bytes and call appropriate function.
+		case packets.TaskRequest:
+			var p packets.TaskRequestPacket
+			err := packets.DecodePacket(packet.buf[:packet.n], &p)
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+					"packet", packetType.String(), "err", err.Error()))
+				return
+			}
+			go s.getTask(p)
+		case packets.TaskStatusRequest:
+			var p packets.TaskStatusRequestPacket
+			err := packets.DecodePacket(packet.buf[:packet.n], &p)
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+					"packet", packetType.String(), "err", err.Error()))
+				return
+			}
+			go s.respondTaskStatusPacket(p)
 		default:
 			s.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet"))
 		}
@@ -323,4 +343,35 @@ func (s *Slave) reqListener(conn net.Conn, packetChan <-chan tcpData) {
 
 	}
 
+}
+
+func (s *Slave) sendChannelHandler(conn net.Conn) {
+	s.closeWait.Add(1)
+	end := false
+	for !end {
+		select {
+		case <-s.close:
+			end = true
+		default:
+			pt := <-s.sendChan
+			bytes, err := packets.EncodePacket(pt.Packet, pt.PacketType)
+			if err != nil {
+				if err == io.EOF {
+					// TODO: remove myself from slavepool
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing slave"))
+					close(s.close)
+					end = true
+				}
+				continue
+			}
+			_, err = conn.Write(bytes)
+			if err != nil {
+				s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send packet", "err", err.Error()))
+			}
+
+			<-time.After(constants.TaskInterval)
+
+		}
+	}
+	s.closeWait.Done()
 }
