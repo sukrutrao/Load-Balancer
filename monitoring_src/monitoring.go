@@ -1,8 +1,13 @@
 package monitoring
 
 import (
+	"bytes"
 	"net"
+	"net/http"
+	"strconv"
+	"strings"
 	"sync"
+	"text/template"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/utility"
@@ -19,17 +24,21 @@ type Monitor struct {
 	broadcastIP net.IP
 	reqSendPort uint16
 	master      Master
+	APIKey      string
 
 	Logger *logging.Logger
 
-	slaveIPs []string
-	mtx      sync.RWMutex
+	slaveIPs       map[string]struct{}
+	failedDeleteIP map[string]struct{}
+	mtx            sync.RWMutex
 
 	close     chan struct{}
 	closeWait sync.WaitGroup
 }
 
 func (mo *Monitor) initDS() {
+	mo.slaveIPs = make(map[string]struct{})
+	mo.failedDeleteIP = make(map[string]struct{})
 	mo.close = make(chan struct{})
 }
 
@@ -53,13 +62,148 @@ func (mo *Monitor) updateAddress() {
 	}
 }
 
-func (mo *Monitor) UpdateSlaveIPs(slaveIPs []string) {
+func (mo *Monitor) UpdateSlaveIPs(slaveIPs []string) (bool, []string, []string) {
 	mo.mtx.Lock()
 	defer mo.mtx.Unlock()
-	mo.slaveIPs = slaveIPs
+
+	var deleted []string
+	var added []string
+
+	modified := false
+	before := len(mo.slaveIPs)
+
+	newMap := make(map[string]struct{})
+	for _, sip := range slaveIPs {
+		newMap[sip] = struct{}{}
+		if _, ok := mo.slaveIPs[sip]; !ok {
+			added = append(added, sip)
+			modified = true
+		}
+	}
+
+	for sip := range mo.slaveIPs {
+		if _, ok := newMap[sip]; !ok {
+			deleted = append(deleted, sip)
+		}
+	}
+	mo.slaveIPs = newMap
+
+	after := len(mo.slaveIPs)
+
+	return (modified || before != after || len(mo.failedDeleteIP) > 0), added, deleted
 }
 
-func (mo *Monitor) UpdateGrafana() {
+func (mo *Monitor) UpdateGrafana(added, deleted []string) {
+	mo.mtx.RLock()
+	defer mo.mtx.RUnlock()
+	mo.UpdateGrafanaDatasource(added, deleted)
+}
+
+func (mo *Monitor) UpdateGrafanaDatasource(added, deleted []string) {
+	mo.mtx.RLock()
+	defer mo.mtx.RUnlock()
+
+	client := &http.Client{}
+
+	// Delete datasource
+	for ip := range mo.failedDeleteIP {
+		mo.Logger.Info(logger.FormatLogMessage("msg", "Deleting datasource", "ip", ip))
+		statusCode, err := mo.addDatasource(client, ip)
+		if err != nil {
+			mo.Logger.Error(logger.FormatLogMessage("msg", "Delete datasource failed", "err", err.Error(), "ip", ip))
+		} else if statusCode != 200 {
+			mo.Logger.Error(logger.FormatLogMessage("msg", "Delete datasource failed", "status", strconv.Itoa(statusCode), "ip", ip))
+		} else {
+			delete(mo.failedDeleteIP, ip)
+		}
+	}
+	for _, ip := range deleted {
+		mo.Logger.Info(logger.FormatLogMessage("msg", "Deleting datasource", "ip", ip))
+		statusCode, err := mo.addDatasource(client, ip)
+		if err != nil {
+			mo.Logger.Error(logger.FormatLogMessage("msg", "Delete datasource failed", "err", err.Error(), "ip", ip))
+			mo.failedDeleteIP[ip] = struct{}{}
+		} else if statusCode != 200 {
+			mo.Logger.Error(logger.FormatLogMessage("msg", "Delete datasource failed", "status", strconv.Itoa(statusCode), "ip", ip))
+			mo.failedDeleteIP[ip] = struct{}{}
+		}
+	}
+
+	// Add datasource
+	for _, ip := range added {
+		mo.Logger.Info(logger.FormatLogMessage("msg", "Adding datasource", "ip", ip))
+		body, err := grafanaAddDatasourceBody(ip)
+		if err != nil {
+			mo.Logger.Error(logger.FormatLogMessage("msg", "Add datasource failed", "err", err.Error(), "ip", ip))
+			continue
+		}
+		req, err := http.NewRequest("POST", "http://localhost:3000/api/datasources", bytes.NewBuffer([]byte(body)))
+		if err != nil {
+			mo.Logger.Error(logger.FormatLogMessage("msg", "Add datasource failed", "err", err.Error(), "ip", ip))
+			continue
+		}
+		mo.setJsonAndAuthHeaders(req)
+		resp, err := client.Do(req)
+		if err != nil {
+			mo.Logger.Error(logger.FormatLogMessage("msg", "Add datasource failed", "err", err.Error(), "ip", ip))
+			continue
+		}
+		if resp.StatusCode != 200 {
+			mo.Logger.Error(logger.FormatLogMessage("msg", "Add datasource failed", "status", strconv.Itoa(resp.StatusCode), "ip", ip))
+			continue
+		}
+	}
+
+}
+
+func (mo *Monitor) addDatasource(client *http.Client, ip string) (int, error) {
+	req, err := http.NewRequest("DELETE", grafanaDeleteURL(ip), nil)
+	if err != nil {
+		return 0, err
+	}
+	mo.setJsonAndAuthHeaders(req)
+	resp, err := client.Do(req)
+	if err != nil {
+		return 0, err
+	}
+	return resp.StatusCode, nil
+}
+
+func (mo *Monitor) setJsonAndAuthHeaders(req *http.Request) {
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
+	req.Header.Set("Authorization", "Bearer "+mo.APIKey)
+}
+
+type addBody struct {
+	Name string
+	URL  string
+}
+
+var addDataTmpl *template.Template = template.Must(template.New("addData").Parse(`
+{
+	"name":"{{.Name}}",
+	"type":"prometheus",
+	"url":"{{.URL}}",
+	"access":"direct",
+	"basicAuth":false
+}
+`))
+
+func grafanaAddDatasourceBody(ip string) (string, error) {
+	name := "slave_" + strings.Replace(ip, ".", "", -1)
+	url := "http://" + ip + ":9090"
+	buf := new(bytes.Buffer)
+
+	err := addDataTmpl.Execute(buf, addBody{name, url})
+	return buf.String(), err
+}
+
+func grafanaDeleteURL(datasourceIP string) string {
+	return "http://localhost:3000/api/datasources/name/slave_" + strings.Replace(datasourceIP, ".", "", -1)
+}
+
+func (mo *Monitor) UpdateGrafanaDashboard() {
 	mo.mtx.RLock()
 	defer mo.mtx.RUnlock()
 }

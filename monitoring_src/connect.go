@@ -215,8 +215,9 @@ func (mo *Monitor) reqRecvAndUpdater(conn net.Conn) {
 					return
 				}
 
-				mo.UpdateSlaveIPs(p.SlaveIPs)
-				mo.UpdateGrafana()
+				if updated, added, deleted := mo.UpdateSlaveIPs(p.SlaveIPs); updated {
+					go mo.UpdateGrafana(added, deleted)
+				}
 
 			default:
 				mo.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet"))
