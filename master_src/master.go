@@ -4,8 +4,8 @@ import (
 	"errors"
 	"io"
 	"net"
-	"os"
-	"os/signal"
+	// "os"
+	// "os/signal"
 	"strconv"
 	"sync"
 	"time"
@@ -70,15 +70,15 @@ func (m *Master) initDS() {
 // run master
 func (m *Master) Run() {
 
-	{ // Handling ctrl+C for graceful shutdown.
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-		go func() {
-			<-c
-			m.Logger.Info(logger.FormatLogMessage("msg", "Closing Master gracefully..."))
-			close(m.close)
-		}()
-	}
+	// { // Handling ctrl+C for graceful shutdown.
+	// 	c := make(chan os.Signal, 1)
+	// 	signal.Notify(c, os.Interrupt)
+	// 	go func() {
+	// 		<-c
+	// 		m.Logger.Info(logger.FormatLogMessage("msg", "Closing Master gracefully..."))
+	// 		close(m.close)
+	// 	}()
+	// }
 
 	m.initDS()
 	m.updateAddress()
@@ -89,12 +89,12 @@ func (m *Master) Run() {
 	go m.connect()
 	go m.gc_routine()
 	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
-	time.Sleep(10 * time.Second)
-	m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
-	for i := 0; i < 10; i++ {
-		m.assignNewTask("ABC", 10)
-		time.Sleep(2 * time.Second)
-	}
+	// time.Sleep(10 * time.Second)
+	// m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
+	// for i := 0; i < 10; i++ {
+	// 	m.assignNewTask("ABC", 10)
+	// 	time.Sleep(2 * time.Second)
+	// }
 	m.Logger.Info(logger.FormatLogMessage("msg", "Tasks complete"))
 	<-m.close
 	m.Close()
@@ -326,7 +326,11 @@ func (mo *Monitor) SendSlaveIPs(slaveIPs []string) {
 }
 
 func (mo *Monitor) Close() {
-	close(mo.close)
+	select {
+	case <-mo.close:
+	default:
+		close(mo.close)
+	}
 	mo.closeWait.Wait()
 }
 
@@ -379,6 +383,7 @@ func (s *Slave) InitDS() {
 func (s *Slave) InitConnections() error {
 	s.closeWait.Add(1)
 	go s.loadRequestHandler()
+	s.closeWait.Add(1)
 	go s.taskRequestHandler()
 	// go s.requestHandler()
 	return nil
@@ -432,14 +437,19 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 		default:
 			var buf [2048]byte
 			// TODO: add timeout
+			conn.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 			n, err := conn.Read(buf[0:])
 			if err != nil {
-				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
 					// TODO: remove myself from slavepool
-					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave (load handler)", "slave_ip", s.ip,
 						"slave_id", strconv.Itoa(int(s.id))))
-					close(s.close)
+					select {
+					case <-s.close:
+					default:
+						close(s.close)
+					}
 					end = true
 				}
 				continue
@@ -473,8 +483,26 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 	s.closeWait.Done()
 }
 
-func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
+func (s *Slave) taskRequestHandler() {
+
+	address := s.ip + ":" + strconv.Itoa(int(s.reqSendPort))
+	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
+
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		s.Logger.Fatal(logger.FormatLogMessage("Error!", "Error!"))
+		close(s.close)
+	}
+
 	s.closeWait.Add(1)
+	go s.sendChannelHandler(conn)
+	s.closeWait.Add(1)
+	go s.taskRecvAndUpdater(conn)
+
+	s.closeWait.Done()
+}
+
+func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
 	end := false
 	for !end {
 		select {
@@ -483,14 +511,19 @@ func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
 		default:
 			var buf [2048]byte
 			// TODO: add timeout
+			conn.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 			n, err := conn.Read(buf[0:])
 			if err != nil {
-				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
 					// TODO: remove myself from slavepool
-					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave (task handler)", "slave_ip", s.ip,
 						"slave_id", strconv.Itoa(int(s.id))))
-					close(s.close)
+					select {
+					case <-s.close:
+					default:
+						close(s.close)
+					}
 					end = true
 				}
 				continue
@@ -544,62 +577,58 @@ func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
 	s.closeWait.Done()
 }
 
-func (s *Slave) taskRequestHandler() {
-	s.closeWait.Add(1)
-
-	address := s.ip + ":" + strconv.Itoa(int(s.reqSendPort))
-	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
-
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		s.Logger.Fatal(logger.FormatLogMessage("Error!", "Error!"))
-		close(s.close)
-	}
-
-	go s.sendChannelHandler(conn)
-	go s.taskRecvAndUpdater(conn)
-
-	s.closeWait.Done()
-}
-
 // func (s *Slave) requestHandler() {
 // 	s.closeWait.Add(1)
 // 	s.closeWait.Done()
 // }
 
 func (s *Slave) Close() {
-	close(s.close)
+	select {
+	case <-s.sendChan:
+	default:
+		close(s.sendChan)
+	}
+	select {
+	case <-s.close:
+	default:
+		close(s.close)
+	}
 	s.closeWait.Wait()
 }
 
 func (s *Slave) sendChannelHandler(conn net.Conn) {
-	s.closeWait.Add(1)
 	end := false
 	for !end {
 		select {
 		case <-s.close:
 			end = true
 		default:
-			pt := <-s.sendChan
-			bytes, err := packets.EncodePacket(pt.Packet, pt.PacketType)
-			if err != nil {
-				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading packet to send"))
-				if err == io.EOF {
-					// TODO: remove myself from slavepool
-					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
-						"slave_id", strconv.Itoa(int(s.id))))
-					close(s.close)
-					end = true
+			pt, ok := <-s.sendChan
+			if ok {
+				bytes, err := packets.EncodePacket(pt.Packet, pt.PacketType)
+				if err != nil {
+					s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading packet to send", "err", err.Error()))
+					continue
 				}
-				continue
-			}
-			_, err = conn.Write(bytes)
-			if err != nil {
-				s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send packet",
-					"slave_ip", s.ip, "err", err.Error()))
-			}
+				_, err = conn.Write(bytes)
+				if err != nil {
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send packet",
+						"slave_ip", s.ip, "err", err.Error()))
+				}
 
-			<-time.After(constants.TaskInterval)
+				<-time.After(constants.TaskInterval)
+			} else {
+				select {
+				case <-s.sendChan:
+				default:
+					select {
+					case <-s.close:
+					default:
+						close(s.close)
+						end = true
+					}
+				}
+			}
 
 		}
 	}
@@ -691,7 +720,7 @@ func (sp *SlavePool) gc(log *logging.Logger) {
 	for i, slave := range sp.slaves {
 		select {
 		case <-slave.close:
-			slave.closeWait.Wait()
+			slave.Close()
 			toRemove = append(toRemove, i)
 		default:
 		}

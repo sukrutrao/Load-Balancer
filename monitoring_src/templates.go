@@ -40,6 +40,9 @@ var fns = template.FuncMap{
 			return 12
 		}
 	},
+	"y_axis": func(x int) int {
+		return 9 * (x / 2)
+	},
 }
 
 var addDashboardTmpl *template.Template = template.Must(template.New("addDashboard").Funcs(fns).Parse(`
@@ -110,9 +113,9 @@ var addDashboardTmpl *template.Template = template.Must(template.New("addDashboa
 				"h": 9,
 				"w": 12,
 				"x": {{(x_axis $i)}},
-				"y": 0
+				"y": {{(y_axis $i)}}
 			},
-			"id": 4,
+			"id": {{$i}},
 			"legend": {
 				"avg": false,
 				"current": false,

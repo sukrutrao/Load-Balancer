@@ -2,8 +2,8 @@ package slave
 
 import (
 	"net"
-	"os"
-	"os/signal"
+	// "os"
+	// "os/signal"
 	"sync"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -58,15 +58,15 @@ type TaskResult struct {
 // Run starts the slave
 func (s *Slave) Run() {
 
-	{ // Handling ctrl+C for graceful shutdown.
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-		go func() {
-			<-c
-			s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
-			close(s.close)
-		}()
-	}
+	// { // Handling ctrl+C for graceful shutdown.
+	// 	c := make(chan os.Signal, 1)
+	// 	signal.Notify(c, os.Interrupt)
+	// 	go func() {
+	// 		<-c
+	// 		s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
+	// 		close(s.close)
+	// 	}()
+	// }
 
 	s.initDS()
 	s.updateAddress()
