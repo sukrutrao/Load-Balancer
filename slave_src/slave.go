@@ -30,9 +30,17 @@ type Slave struct {
 
 	Logger *logging.Logger
 
+	serverHandler *Handler
+	metric        Metric
+
 	close     chan struct{}
 	closeWait sync.WaitGroup
 	tasks     map[int]SlaveTask
+}
+
+type Metric struct {
+	TasksCompleted uint
+	TasksRequested uint
 }
 
 type SlaveTask struct {
@@ -70,11 +78,14 @@ func (s *Slave) Run() {
 
 	s.initDS()
 	s.updateAddress()
-	s.Logger.Info(logger.FormatLogMessage("msg", "Slave running"))
+	s.StartServer(&HTTPOptions{
+		Logger: s.Logger,
+	})
 	if err := s.connect(); err != nil {
 		s.Logger.Error(logger.FormatLogMessage("msg", "Failed to connect to master", "err", err.Error()))
 		s.Close()
 	}
+	s.Logger.Info(logger.FormatLogMessage("msg", "Slave running"))
 	s.closeWait.Wait()
 }
 
@@ -92,6 +103,11 @@ func (s *Slave) updateAddress() {
 
 func (s *Slave) Close() {
 	s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
+
+	if err := s.serverHandler.Shutdown(); err != nil {
+		s.Logger.Error(logger.FormatLogMessage("msg", "Failed to ShutDown the server", "err", err.Error()))
+	}
+
 	close(s.close)
 	s.closeWait.Wait()
 }
