@@ -205,7 +205,7 @@ func (mo *Monitor) StartAcceptingRequests(packetChan chan<- monitorTcpData) erro
 				var buf [2048]byte
 				// TODO: add timeout
 				n, err := mo.conn.Read(buf[0:])
-				mo.logger.Warning(logger.FormatLogMessage("msg", "Monitor request"))
+				mo.logger.Info(logger.FormatLogMessage("msg", "Monitor request"))
 				if err != nil {
 					mo.logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 					if err == io.EOF {
@@ -249,7 +249,7 @@ func (mo *Monitor) SendSlaveIPs(slaveIPs []string) {
 	}
 
 	_, err = mo.conn.Write(bytes)
-	mo.logger.Warning(logger.FormatLogMessage("msg", "Sending slave ip"))
+	mo.logger.Info(logger.FormatLogMessage("msg", "Sending slave ip"))
 	if err != nil {
 		mo.logger.Error(logger.FormatLogMessage("msg", "Failed to send packet",
 			"packet", packets.MonitorResponse.String(), "err", err.Error()))

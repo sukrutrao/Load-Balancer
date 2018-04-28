@@ -7,7 +7,6 @@ import (
 	"strconv"
 	"strings"
 	"sync"
-	"text/template"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/utility"
@@ -97,6 +96,7 @@ func (mo *Monitor) UpdateGrafana(added, deleted []string) {
 	mo.mtx.RLock()
 	defer mo.mtx.RUnlock()
 	mo.UpdateGrafanaDatasource(added, deleted)
+	mo.UpdateGrafanaDashboard()
 }
 
 func (mo *Monitor) UpdateGrafanaDatasource(added, deleted []string) {
@@ -108,7 +108,7 @@ func (mo *Monitor) UpdateGrafanaDatasource(added, deleted []string) {
 	// Delete datasource
 	for ip := range mo.failedDeleteIP {
 		mo.Logger.Info(logger.FormatLogMessage("msg", "Deleting datasource", "ip", ip))
-		statusCode, err := mo.addDatasource(client, ip)
+		statusCode, err := mo.deleteDatasource(client, ip)
 		if err != nil {
 			mo.Logger.Error(logger.FormatLogMessage("msg", "Delete datasource failed", "err", err.Error(), "ip", ip))
 		} else if statusCode != 200 {
@@ -119,7 +119,7 @@ func (mo *Monitor) UpdateGrafanaDatasource(added, deleted []string) {
 	}
 	for _, ip := range deleted {
 		mo.Logger.Info(logger.FormatLogMessage("msg", "Deleting datasource", "ip", ip))
-		statusCode, err := mo.addDatasource(client, ip)
+		statusCode, err := mo.deleteDatasource(client, ip)
 		if err != nil {
 			mo.Logger.Error(logger.FormatLogMessage("msg", "Delete datasource failed", "err", err.Error(), "ip", ip))
 			mo.failedDeleteIP[ip] = struct{}{}
@@ -156,7 +156,7 @@ func (mo *Monitor) UpdateGrafanaDatasource(added, deleted []string) {
 
 }
 
-func (mo *Monitor) addDatasource(client *http.Client, ip string) (int, error) {
+func (mo *Monitor) deleteDatasource(client *http.Client, ip string) (int, error) {
 	req, err := http.NewRequest("DELETE", grafanaDeleteURL(ip), nil)
 	if err != nil {
 		return 0, err
@@ -169,41 +169,61 @@ func (mo *Monitor) addDatasource(client *http.Client, ip string) (int, error) {
 	return resp.StatusCode, nil
 }
 
+func (mo *Monitor) UpdateGrafanaDashboard() {
+	mo.mtx.RLock()
+	defer mo.mtx.RUnlock()
+
+	mo.Logger.Info(logger.FormatLogMessage("msg", "Updating dashboard"))
+	tmplObj := addDashboardTmplObj{}
+	for sip := range mo.slaveIPs {
+		tmplObj.Datasources = append(tmplObj.Datasources, Datasource{
+			IP:    sip,
+			Name:  datasourceName(sip),
+			Label: datasourceLabel(sip),
+		})
+	}
+
+	body, err := grafanaUpdateDashboardBody(tmplObj)
+	if err != nil {
+		mo.Logger.Error(logger.FormatLogMessage("msg", "Update dashboard failed", "err", err.Error()))
+		return
+	}
+
+	req, err := http.NewRequest("POST", "http://localhost:3000/api/dashboards/db", bytes.NewBuffer([]byte(body)))
+	if err != nil {
+		mo.Logger.Error(logger.FormatLogMessage("msg", "Update dashboard failed", "err", err.Error()))
+		return
+	}
+	mo.setJsonAndAuthHeaders(req)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		mo.Logger.Error(logger.FormatLogMessage("msg", "Update dashboard failed", "err", err.Error()))
+		return
+	}
+
+	if resp.StatusCode != 200 {
+		mo.Logger.Error(logger.FormatLogMessage("msg", "Update dashboard failed", "status", strconv.Itoa(resp.StatusCode)))
+		return
+	}
+
+}
+
 func (mo *Monitor) setJsonAndAuthHeaders(req *http.Request) {
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 	req.Header.Set("Authorization", "Bearer "+mo.APIKey)
 }
 
-type addBody struct {
-	Name string
-	URL  string
+func datasourceLabel(ip string) string {
+	return "slave_" + strings.Replace(ip, ".", "", -1)
 }
 
-var addDataTmpl *template.Template = template.Must(template.New("addData").Parse(`
-{
-	"name":"{{.Name}}",
-	"type":"prometheus",
-	"url":"{{.URL}}",
-	"access":"direct",
-	"basicAuth":false
-}
-`))
-
-func grafanaAddDatasourceBody(ip string) (string, error) {
-	name := "slave_" + strings.Replace(ip, ".", "", -1)
-	url := "http://" + ip + ":9090"
-	buf := new(bytes.Buffer)
-
-	err := addDataTmpl.Execute(buf, addBody{name, url})
-	return buf.String(), err
+func datasourceName(ip string) string {
+	return "DS_SLAVE_" + strings.Replace(ip, ".", "", -1)
 }
 
 func grafanaDeleteURL(datasourceIP string) string {
 	return "http://localhost:3000/api/datasources/name/slave_" + strings.Replace(datasourceIP, ".", "", -1)
-}
-
-func (mo *Monitor) UpdateGrafanaDashboard() {
-	mo.mtx.RLock()
-	defer mo.mtx.RUnlock()
 }
