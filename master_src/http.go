@@ -31,7 +31,7 @@ func (m *Master) StartServer(opts *HTTPOptions) {
 	m.serverHandler.server = &http.Server{Addr: listenPortStr}
 
 	http.HandleFunc("/ok", m.serverHandler.serverOk)
-	http.HandleFunc("/test", m.serverHandler.testRequest)
+	http.HandleFunc("/fibonacii", m.serverHandler.fibonacii)
 
 	m.Logger.Info(logger.FormatLogMessage("msg", "Starting the server"))
 
@@ -55,7 +55,14 @@ func (h *Handler) serverOk(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Server is running")
 }
 
-func (h *Handler) testRequest(w http.ResponseWriter, r *http.Request) {
+func (h *Handler) fibonacii(w http.ResponseWriter, r *http.Request) {
+	_, ok := r.URL.Query()["n"]
+	if !ok {
+		w.WriteHeader(400)
+		fmt.Fprint(w, "Needs parameter n")
+		return
+	}
+
 	// h.m.assignNewTask("test", 3.1415)
 }
 
