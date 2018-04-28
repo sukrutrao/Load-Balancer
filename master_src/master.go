@@ -38,7 +38,7 @@ type Master struct {
 // task as seen by master
 type MasterTask struct {
 	TaskId     int
-	Task       string
+	Task       packets.TaskPacket
 	Load       int
 	AssignedTo *Slave
 	IsAssigned bool
@@ -82,7 +82,8 @@ func (m *Master) Run() {
 	time.Sleep(10 * time.Second)
 	m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
 	for i := 0; i < 10; i++ {
-		m.assignNewTask("ABC", 10)
+		t := packets.TaskPacket{TaskTypeID: packets.FibonacciTaskType, N: i + 1}
+		m.assignNewTask(t, i+1)
 		time.Sleep(2 * time.Second)
 	}
 	m.Logger.Info(logger.FormatLogMessage("msg", "Tasks complete"))
@@ -143,10 +144,10 @@ func (m *Master) Close() {
 }
 
 // create task, find whom to assign, and send to that slave's channel
-func (m *Master) assignNewTask(task string, load int) error {
+func (m *Master) assignNewTask(task packets.TaskPacket, load int) error {
 	t := m.createTask(task, load)
 	s := m.assignTask(t)
-	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task, "Slave", strconv.Itoa(int(s.id)))) // TODO - cast may not be correct
+	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task.Description(), "Slave", strconv.Itoa(int(s.id)))) // TODO - cast may not be correct
 	p := m.assignTaskPacket(t)
 	pt := packets.CreatePacketTransmit(p, packets.TaskRequest) // TODO - fix this
 	s.sendChan <- pt
