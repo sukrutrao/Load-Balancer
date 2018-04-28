@@ -27,7 +27,7 @@ func (s *Slave) StartServer(opts *HTTPOptions) {
 		opts: opts,
 	}
 
-	listenPortStr := ":" + strconv.Itoa(int(constants.HTTPServerPort))
+	listenPortStr := ":" + strconv.Itoa(int(constants.MetricServerPort))
 	s.serverHandler.server = &http.Server{Addr: listenPortStr}
 
 	http.HandleFunc("/ok", s.serverHandler.serverOk)

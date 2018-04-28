@@ -216,6 +216,7 @@ type TaskPacket struct {
 	TaskTypeID TaskType
 	N          int
 	Result     uint64
+	Close      chan struct{}
 }
 
 func (t *TaskPacket) Description() string {

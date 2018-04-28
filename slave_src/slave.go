@@ -81,6 +81,7 @@ func (s *Slave) Run() {
 	s.StartServer(&HTTPOptions{
 		Logger: s.Logger,
 	})
+	s.closeWait.Add(1)
 	if err := s.connect(); err != nil {
 		s.Logger.Error(logger.FormatLogMessage("msg", "Failed to connect to master", "err", err.Error()))
 		s.Close()

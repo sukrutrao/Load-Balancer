@@ -8,7 +8,7 @@ import (
 )
 
 func (m *Master) assignTaskPacket(t *MasterTask) packets.TaskRequestPacket {
-	packet := packets.TaskRequestPacket{t.TaskId, t.Task, t.Load}
+	packet := packets.TaskRequestPacket{t.TaskId, *t.Task, t.Load}
 	return packet
 }
 
@@ -41,6 +41,9 @@ func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
 	t := packet.Result
 	switch t.TaskTypeID {
 	case packets.FibonacciTaskType:
+		orgTask := GlobalTasks[packet.TaskId]
+		orgTask.Task.Result = t.Result
+		close(orgTask.Task.Close)
 		s.Logger.Info(logger.FormatLogMessage("Task ID completed", strconv.Itoa(int(packet.TaskId)), "Result", strconv.Itoa(int(t.Result))))
 	default:
 		s.Logger.Info(logger.FormatLogMessage("msg", "Unknown Task Type"))
@@ -50,7 +53,7 @@ func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
 }
 
 // takes task string and load and creates a task object
-func (m *Master) createTask(task packets.TaskPacket, load int) *MasterTask {
+func (m *Master) createTask(task *packets.TaskPacket, load int) *MasterTask {
 	taskId := m.lastTaskId + 1
 	t := MasterTask{TaskId: taskId,
 		Task:       task,
@@ -58,7 +61,7 @@ func (m *Master) createTask(task packets.TaskPacket, load int) *MasterTask {
 		AssignedTo: nil,
 		IsAssigned: false,
 		TaskStatus: packets.Unassigned}
-	m.tasks[taskId] = t
+	GlobalTasks[taskId] = t
 	m.lastTaskId += 1
 	return &t // TODO - is this safe?
 }

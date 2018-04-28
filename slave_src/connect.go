@@ -110,6 +110,7 @@ func (s *Slave) connect() error {
 	}
 
 	s.Logger.Info(logger.FormatLogMessage("msg", "Connection response", "ack", strconv.FormatBool(p.Ack), "server_ip", p.IP.String()))
+	s.closeWait.Done()
 	return nil
 }
 
@@ -147,7 +148,11 @@ func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData
 			if err != nil {
 				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
-					close(s.close)
+					select {
+					case <-s.close:
+					default:
+						close(s.close)
+					}
 					end = true
 				}
 				continue

@@ -2,6 +2,7 @@ package master
 
 import (
 	"fmt"
+	"github.com/GoodDeeds/load-balancer/common/packets"
 	"net/http"
 	"strconv"
 
@@ -31,7 +32,7 @@ func (m *Master) StartServer(opts *HTTPOptions) {
 	m.serverHandler.server = &http.Server{Addr: listenPortStr}
 
 	http.HandleFunc("/ok", m.serverHandler.serverOk)
-	http.HandleFunc("/fibonacii", m.serverHandler.fibonacii)
+	http.HandleFunc("/fibonacii", m.serverHandler.fibonaciiHandler(m))
 
 	m.Logger.Info(logger.FormatLogMessage("msg", "Starting the server"))
 
@@ -55,15 +56,30 @@ func (h *Handler) serverOk(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Server is running")
 }
 
-func (h *Handler) fibonacii(w http.ResponseWriter, r *http.Request) {
-	_, ok := r.URL.Query()["n"]
-	if !ok {
-		w.WriteHeader(400)
-		fmt.Fprint(w, "Needs parameter n")
-		return
-	}
+func (h *Handler) fibonaciiHandler(m *Master) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		n, ok := r.URL.Query()["n"]
+		if !ok || len(n) == 0 {
+			w.WriteHeader(400)
+			fmt.Fprint(w, "Needs parameter n")
+			return
+		}
+		nInt, err := strconv.Atoi(n[0])
+		if err != nil {
+			w.WriteHeader(400)
+			fmt.Fprint(w, "Parameters are improper")
+			return
+		}
 
-	// h.m.assignNewTask("test", 3.1415)
+		t := packets.TaskPacket{
+			TaskTypeID: packets.FibonacciTaskType,
+			N:          nInt,
+			Close:      make(chan struct{}),
+		}
+		m.assignNewTask(&t, nInt)
+		<-t.Close
+		fmt.Fprint(w, t.Result)
+	}
 }
 
 func (h *Handler) Shutdown() error {

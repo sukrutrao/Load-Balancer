@@ -3,7 +3,6 @@ package slave
 import (
 	/*	"net"*/
 	"strconv"
-	"time"
 
 	// "github.com/GoodDeeds/load-balancer/common/constants"
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -59,7 +58,6 @@ func (s *Slave) getStatus(taskId int) (status packets.Status) {
 func (s *Slave) handleTask(t *SlaveTask) {
 	s.currentLoad += t.Load
 	s.Logger.Info(logger.FormatLogMessage("msg", "Handling Task", "Task ID", strconv.Itoa(int(t.TaskId))))
-	time.Sleep(10000 * time.Millisecond)
 	s.runTask(&t.Task)
 	t.TaskStatus = packets.Complete
 	s.Logger.Info(logger.FormatLogMessage("msg", "Done Task", "Task ID", strconv.Itoa(int(t.TaskId))))

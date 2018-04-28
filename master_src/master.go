@@ -17,13 +17,14 @@ import (
 	"github.com/op/go-logging"
 )
 
+var GlobalTasks map[int]MasterTask = make(map[int]MasterTask)
+
 // Master is used to store info of master node which is currently running
 type Master struct {
 	myIP        net.IP
 	broadcastIP net.IP
 	slavePool   *SlavePool
 	Logger      *logging.Logger
-	tasks       map[int]MasterTask
 	lastTaskId  int
 
 	serverHandler *Handler
@@ -41,7 +42,7 @@ type Master struct {
 // task as seen by master
 type MasterTask struct {
 	TaskId     int
-	Task       packets.TaskPacket
+	Task       *packets.TaskPacket
 	Load       int
 	AssignedTo *Slave
 	IsAssigned bool
@@ -62,7 +63,6 @@ func (m *Master) initDS() {
 		acked:       false,
 		logger:      m.Logger,
 	}
-	m.tasks = make(map[int]MasterTask)
 	m.lastTaskId = 0
 	m.loadBalancer = &RoundRobin{&LoadBalancerBase{slavePool: m.slavePool}, -1}
 }
@@ -89,14 +89,14 @@ func (m *Master) Run() {
 	go m.connect()
 	go m.gc_routine()
 	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
-	time.Sleep(10 * time.Second)
-	m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
-	for i := 0; i < 10; i++ {
-		t := packets.TaskPacket{TaskTypeID: packets.FibonacciTaskType, N: i + 1}
-		m.assignNewTask(t, i+1)
-		time.Sleep(2 * time.Second)
-	}
-	m.Logger.Info(logger.FormatLogMessage("msg", "Tasks complete"))
+	// time.Sleep(10 * time.Second)
+	// m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
+	// for i := 0; i < 10; i++ {
+	// 	t := packets.TaskPacket{TaskTypeID: packets.FibonacciTaskType, N: i + 1}
+	// 	m.assignNewTask(t, i+1)
+	// 	time.Sleep(2 * time.Second)
+	// }
+	// m.Logger.Info(logger.FormatLogMessage("msg", "Tasks complete"))
 	<-m.close
 	m.Close()
 }
@@ -220,7 +220,7 @@ func (m *Master) Close() {
 }
 
 // create task, find whom to assign, and send to that slave's channel
-func (m *Master) assignNewTask(task packets.TaskPacket, load int) error {
+func (m *Master) assignNewTask(task *packets.TaskPacket, load int) error {
 	t := m.createTask(task, load)
 	s := m.assignTask(t)
 	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task.Description(), "Slave", strconv.Itoa(int(s.id)))) // TODO - cast may not be correct
