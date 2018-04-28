@@ -287,6 +287,7 @@ func (s *Slave) reqListenManager(ln net.Listener) {
 
 	packetChan := make(chan tcpData)
 	go s.collectIncomingRequests(conn, packetChan)
+	s.closeWait.Add(1)
 	go s.sendChannelHandler(conn)
 
 	end := false
@@ -353,7 +354,6 @@ func (s *Slave) reqListener(conn net.Conn, packetChan <-chan tcpData) {
 }
 
 func (s *Slave) sendChannelHandler(conn net.Conn) {
-	s.closeWait.Add(1)
 	end := false
 	for !end {
 		select {
@@ -375,8 +375,6 @@ func (s *Slave) sendChannelHandler(conn net.Conn) {
 			if err != nil {
 				s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send packet", "err", err.Error()))
 			}
-
-			<-time.After(constants.TaskInterval)
 
 		}
 	}

@@ -1,6 +1,7 @@
 package slave
 
 import (
+	"fmt"
 	/*	"net"*/
 	"strconv"
 
@@ -44,6 +45,7 @@ func (s *Slave) sendTaskResult(t *SlaveTask) {
 	}
 	pt := packets.CreatePacketTransmit(response, packets.TaskResultResponse)
 	// s.Logger.Info(logger.FormatLogMessage("msg", "Sending result to channel"))
+	fmt.Println("SENT!")
 	s.sendChan <- pt
 }
 
@@ -61,7 +63,7 @@ func (s *Slave) handleTask(t *SlaveTask) {
 	s.runTask(&t.Task)
 	t.TaskStatus = packets.Complete
 	s.Logger.Info(logger.FormatLogMessage("msg", "Done Task", "Task ID", strconv.Itoa(int(t.TaskId))))
-	go s.sendTaskResult(t)
+	s.sendTaskResult(t)
 }
 
 func (s *Slave) displayResult(t *packets.TaskPacket, taskId int) {
