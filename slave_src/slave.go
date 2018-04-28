@@ -2,8 +2,8 @@ package slave
 
 import (
 	"net"
-	"os"
-	"os/signal"
+	// "os"
+	// "os/signal"
 	"sync"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -14,7 +14,7 @@ import (
 
 // Master is used to store info of master node
 type Master struct {
-	ip string
+	ip net.IP
 }
 
 // Slave is used to store info of slave node which is currently running
@@ -30,9 +30,17 @@ type Slave struct {
 
 	Logger *logging.Logger
 
+	serverHandler *Handler
+	metric        Metric
+
 	close     chan struct{}
 	closeWait sync.WaitGroup
 	tasks     map[int]SlaveTask
+}
+
+type Metric struct {
+	TasksCompleted uint
+	TasksRequested uint
 }
 
 type SlaveTask struct {
@@ -58,23 +66,26 @@ type TaskResult struct {
 // Run starts the slave
 func (s *Slave) Run() {
 
-	{ // Handling ctrl+C for graceful shutdown.
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-		go func() {
-			<-c
-			s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
-			close(s.close)
-		}()
-	}
+	// { // Handling ctrl+C for graceful shutdown.
+	// 	c := make(chan os.Signal, 1)
+	// 	signal.Notify(c, os.Interrupt)
+	// 	go func() {
+	// 		<-c
+	// 		s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
+	// 		close(s.close)
+	// 	}()
+	// }
 
 	s.initDS()
-	s.Logger.Info(logger.FormatLogMessage("msg", "Slave running"))
 	s.updateAddress()
+	s.StartServer(&HTTPOptions{
+		Logger: s.Logger,
+	})
 	if err := s.connect(); err != nil {
 		s.Logger.Error(logger.FormatLogMessage("msg", "Failed to connect to master", "err", err.Error()))
 		s.Close()
 	}
+	s.Logger.Info(logger.FormatLogMessage("msg", "Slave running"))
 	s.closeWait.Wait()
 }
 
@@ -92,6 +103,11 @@ func (s *Slave) updateAddress() {
 
 func (s *Slave) Close() {
 	s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
+
+	if err := s.serverHandler.Shutdown(); err != nil {
+		s.Logger.Error(logger.FormatLogMessage("msg", "Failed to ShutDown the server", "err", err.Error()))
+	}
+
 	close(s.close)
 	s.closeWait.Wait()
 }

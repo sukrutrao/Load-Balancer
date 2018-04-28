@@ -1,10 +1,11 @@
 package master
 
 import (
+	"errors"
 	"io"
 	"net"
-	"os"
-	"os/signal"
+	// "os"
+	// "os/signal"
 	"strconv"
 	"sync"
 	"time"
@@ -31,6 +32,8 @@ type Master struct {
 	unackedSlaveMtx sync.RWMutex
 	loadBalancer    LoadBalancerInterface
 
+	monitor *Monitor
+
 	close     chan struct{}
 	closeWait sync.WaitGroup
 }
@@ -52,6 +55,13 @@ func (m *Master) initDS() {
 	m.slavePool = &SlavePool{
 		Logger: m.Logger,
 	}
+	m.monitor = &Monitor{
+		id:          0,
+		ip:          []byte{},
+		reqSendPort: 0,
+		acked:       false,
+		logger:      m.Logger,
+	}
 	m.tasks = make(map[int]MasterTask)
 	m.lastTaskId = 0
 	m.loadBalancer = &RoundRobin{&LoadBalancerBase{slavePool: m.slavePool}, -1}
@@ -60,15 +70,15 @@ func (m *Master) initDS() {
 // run master
 func (m *Master) Run() {
 
-	{ // Handling ctrl+C for graceful shutdown.
-		c := make(chan os.Signal, 1)
-		signal.Notify(c, os.Interrupt)
-		go func() {
-			<-c
-			m.Logger.Info(logger.FormatLogMessage("msg", "Closing Master gracefully..."))
-			close(m.close)
-		}()
-	}
+	// { // Handling ctrl+C for graceful shutdown.
+	// 	c := make(chan os.Signal, 1)
+	// 	signal.Notify(c, os.Interrupt)
+	// 	go func() {
+	// 		<-c
+	// 		m.Logger.Info(logger.FormatLogMessage("msg", "Closing Master gracefully..."))
+	// 		close(m.close)
+	// 	}()
+	// }
 
 	m.initDS()
 	m.updateAddress()
@@ -107,6 +117,71 @@ func (m *Master) SlaveExists(ip net.IP, id uint16) bool {
 	return m.slavePool.SlaveExists(ip, id)
 }
 
+type monitorTcpData struct {
+	n   int
+	buf [1024]byte
+}
+
+func (m *Master) StartMonitor() error {
+
+	packetChan := make(chan monitorTcpData)
+
+	if err := m.monitor.StartAcceptingRequests(packetChan); err != nil {
+		return err
+	}
+
+	m.closeWait.Add(1)
+	go func() {
+
+		end := false
+		for !end {
+			select {
+			case <-m.close:
+				m.Logger.Info(logger.FormatLogMessage("msg", "Stopping Monitor Request Listener"))
+				end = true
+				break
+			default:
+				if m.monitor.acked {
+					m.handleMonitorRequests(packetChan)
+				} else {
+					end = true
+				}
+			}
+		}
+
+		m.closeWait.Done()
+	}()
+
+	return nil
+}
+
+func (m *Master) handleMonitorRequests(packetChan <-chan monitorTcpData) {
+
+	select {
+	case packet, ok := <-packetChan:
+		if !ok {
+			break
+		}
+
+		packetType, err := packets.GetPacketType(packet.buf[:packet.n])
+		if err != nil {
+			m.Logger.Error(logger.FormatLogMessage("err", err.Error()))
+			return
+		}
+		switch packetType {
+		case packets.MonitorRequest:
+			m.monitor.SendSlaveIPs(m.slavePool.GetAllSlaveIPs())
+		default:
+			m.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet"))
+		}
+
+	// Timeout
+	case <-time.After(constants.WaitForReqTimeout):
+
+	}
+
+}
+
 func (m *Master) gc_routine() {
 	m.Logger.Info(logger.FormatLogMessage("msg", "Garbage collection routine started"))
 	end := false
@@ -136,6 +211,7 @@ func (m *Master) Close() {
 	default:
 		close(m.close)
 	}
+	m.monitor.Close()
 
 	// Closing all slaves.
 	m.slavePool.Close(m.Logger)
@@ -155,6 +231,115 @@ func (m *Master) assignNewTask(task packets.TaskPacket, load int) error {
 	//	s.sendChan <- packetType // TODO - this could cause issues, packaging with pt (above) would be better
 	return nil
 }
+
+//////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
+////////////////////////// MONITOR ///////////////////////////////
+//////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
+
+type Monitor struct {
+	id          uint16
+	ip          net.IP
+	reqSendPort uint16
+	acked       bool
+	conn        net.Conn
+	logger      *logging.Logger
+
+	close     chan struct{}
+	closeWait sync.WaitGroup
+}
+
+func (mo *Monitor) StartAcceptingRequests(packetChan chan<- monitorTcpData) error {
+	if !mo.acked {
+		return errors.New("Unacked monitor")
+	}
+
+	address := mo.ip.String() + ":" + strconv.Itoa(int(mo.reqSendPort))
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		return err
+	}
+	mo.conn = conn
+
+	mo.closeWait.Add(1)
+	go func() {
+		end := false
+		for !end {
+			select {
+			case <-mo.close:
+				end = true
+			default:
+				var buf [2048]byte
+				// TODO: add timeout
+				n, err := mo.conn.Read(buf[0:])
+				mo.logger.Info(logger.FormatLogMessage("msg", "Monitor request"))
+				if err != nil {
+					mo.logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
+					if err == io.EOF {
+						select {
+						case <-mo.close:
+						default:
+							close(mo.close)
+						}
+						mo.acked = false
+						end = true
+					}
+					continue
+				}
+
+				var bufCopy [1024]byte
+				copy(bufCopy[:], buf[:])
+				packetChan <- monitorTcpData{
+					n:   n,
+					buf: bufCopy,
+				}
+			}
+		}
+
+		mo.closeWait.Done()
+	}()
+
+	return nil
+}
+
+func (mo *Monitor) SendSlaveIPs(slaveIPs []string) {
+
+	res := packets.MonitorResponsePacket{
+		SlaveIPs: slaveIPs,
+	}
+
+	bytes, err := packets.EncodePacket(res, packets.MonitorResponse)
+	if err != nil {
+		mo.logger.Error(logger.FormatLogMessage("msg", "Failed to encode packet",
+			"packet", packets.MonitorResponse.String(), "err", err.Error()))
+		return
+	}
+
+	_, err = mo.conn.Write(bytes)
+	mo.logger.Info(logger.FormatLogMessage("msg", "Sending slave ip"))
+	if err != nil {
+		mo.logger.Error(logger.FormatLogMessage("msg", "Failed to send packet",
+			"packet", packets.MonitorResponse.String(), "err", err.Error()))
+		return
+	}
+
+}
+
+func (mo *Monitor) Close() {
+	select {
+	case <-mo.close:
+	default:
+		close(mo.close)
+	}
+	mo.closeWait.Wait()
+}
+
+//////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
+////////////////////////// SLAVE /////////////////////////////////
+//////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
 
 // Slave is used to store info of slave node connected to it
 type Slave struct {
@@ -199,6 +384,7 @@ func (s *Slave) InitDS() {
 func (s *Slave) InitConnections() error {
 	s.closeWait.Add(1)
 	go s.loadRequestHandler()
+	s.closeWait.Add(1)
 	go s.taskRequestHandler()
 	// go s.requestHandler()
 	return nil
@@ -252,14 +438,19 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 		default:
 			var buf [2048]byte
 			// TODO: add timeout
+			conn.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 			n, err := conn.Read(buf[0:])
 			if err != nil {
-				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
 					// TODO: remove myself from slavepool
-					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave (load handler)", "slave_ip", s.ip,
 						"slave_id", strconv.Itoa(int(s.id))))
-					close(s.close)
+					select {
+					case <-s.close:
+					default:
+						close(s.close)
+					}
 					end = true
 				}
 				continue
@@ -293,8 +484,26 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 	s.closeWait.Done()
 }
 
-func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
+func (s *Slave) taskRequestHandler() {
+
+	address := s.ip + ":" + strconv.Itoa(int(s.reqSendPort))
+	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
+
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		s.Logger.Fatal(logger.FormatLogMessage("Error!", "Error!"))
+		close(s.close)
+	}
+
 	s.closeWait.Add(1)
+	go s.sendChannelHandler(conn)
+	s.closeWait.Add(1)
+	go s.taskRecvAndUpdater(conn)
+
+	s.closeWait.Done()
+}
+
+func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
 	end := false
 	for !end {
 		select {
@@ -303,14 +512,19 @@ func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
 		default:
 			var buf [2048]byte
 			// TODO: add timeout
+			conn.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 			n, err := conn.Read(buf[0:])
 			if err != nil {
-				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
 					// TODO: remove myself from slavepool
-					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave (task handler)", "slave_ip", s.ip,
 						"slave_id", strconv.Itoa(int(s.id))))
-					close(s.close)
+					select {
+					case <-s.close:
+					default:
+						close(s.close)
+					}
 					end = true
 				}
 				continue
@@ -364,62 +578,58 @@ func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
 	s.closeWait.Done()
 }
 
-func (s *Slave) taskRequestHandler() {
-	s.closeWait.Add(1)
-
-	address := s.ip + ":" + strconv.Itoa(int(s.reqSendPort))
-	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
-
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		s.Logger.Fatal(logger.FormatLogMessage("Error!", "Error!"))
-		close(s.close)
-	}
-
-	go s.sendChannelHandler(conn)
-	go s.taskRecvAndUpdater(conn)
-
-	s.closeWait.Done()
-}
-
 // func (s *Slave) requestHandler() {
 // 	s.closeWait.Add(1)
 // 	s.closeWait.Done()
 // }
 
 func (s *Slave) Close() {
-	close(s.close)
+	select {
+	case <-s.sendChan:
+	default:
+		close(s.sendChan)
+	}
+	select {
+	case <-s.close:
+	default:
+		close(s.close)
+	}
 	s.closeWait.Wait()
 }
 
 func (s *Slave) sendChannelHandler(conn net.Conn) {
-	s.closeWait.Add(1)
 	end := false
 	for !end {
 		select {
 		case <-s.close:
 			end = true
 		default:
-			pt := <-s.sendChan
-			bytes, err := packets.EncodePacket(pt.Packet, pt.PacketType)
-			if err != nil {
-				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading packet to send"))
-				if err == io.EOF {
-					// TODO: remove myself from slavepool
-					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
-						"slave_id", strconv.Itoa(int(s.id))))
-					close(s.close)
-					end = true
+			pt, ok := <-s.sendChan
+			if ok {
+				bytes, err := packets.EncodePacket(pt.Packet, pt.PacketType)
+				if err != nil {
+					s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading packet to send", "err", err.Error()))
+					continue
 				}
-				continue
-			}
-			_, err = conn.Write(bytes)
-			if err != nil {
-				s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send packet",
-					"slave_ip", s.ip, "err", err.Error()))
-			}
+				_, err = conn.Write(bytes)
+				if err != nil {
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send packet",
+						"slave_ip", s.ip, "err", err.Error()))
+				}
 
-			<-time.After(constants.TaskInterval)
+				<-time.After(constants.TaskInterval)
+			} else {
+				select {
+				case <-s.sendChan:
+				default:
+					select {
+					case <-s.close:
+					default:
+						close(s.close)
+						end = true
+					}
+				}
+			}
 
 		}
 	}
@@ -428,10 +638,22 @@ func (s *Slave) sendChannelHandler(conn net.Conn) {
 
 // TODO: regularly send info request to all slaves.
 
+//////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
+////////////////////////// SLAVE POOL ////////////////////////////
+//////////////////////////////////////////////////////////////////
+//////////////////////////////////////////////////////////////////
+
 type SlavePool struct {
 	mtx    sync.RWMutex
 	slaves []*Slave
 	Logger *logging.Logger
+}
+
+func (sp *SlavePool) NumSlaves() int {
+	sp.mtx.RLock()
+	defer sp.mtx.RUnlock()
+	return len(sp.slaves)
 }
 
 func (sp *SlavePool) AddSlave(slave *Slave) {
@@ -475,6 +697,17 @@ func (sp *SlavePool) SlaveExists(ip net.IP, id uint16) bool {
 	return false
 }
 
+func (sp *SlavePool) GetAllSlaveIPs() []string {
+	sp.mtx.RLock()
+	defer sp.mtx.RUnlock()
+	var ips []string
+
+	for _, s := range sp.slaves {
+		ips = append(ips, s.ip)
+	}
+
+	return ips
+}
 func (sp *SlavePool) Close(log *logging.Logger) {
 	// close all go routines/listeners
 	log.Info(logger.FormatLogMessage("msg", "Closing Slave Pool"))
@@ -488,7 +721,7 @@ func (sp *SlavePool) gc(log *logging.Logger) {
 	for i, slave := range sp.slaves {
 		select {
 		case <-slave.close:
-			slave.closeWait.Wait()
+			slave.Close()
 			toRemove = append(toRemove, i)
 		default:
 		}

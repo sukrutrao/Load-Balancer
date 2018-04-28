@@ -86,6 +86,8 @@ func (s *Slave) connect() error {
 		return errors.New("Failed to connect to Master")
 	}
 
+	s.master.ip = p.IP
+
 	ack := packets.BroadcastConnectResponse{
 		Ack:         true,
 		IP:          s.myIP,
