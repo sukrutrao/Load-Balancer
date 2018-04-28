@@ -41,6 +41,7 @@ const (
 // Task Type IDs
 const (
 	FibonacciTaskType TaskType = iota
+	CountPrimesTaskType
 )
 
 // Status codes
@@ -216,6 +217,7 @@ type TaskPacket struct {
 	TaskTypeID TaskType
 	N          int
 	Result     uint64
+	IntResult  int
 	Close      chan struct{}
 }
 
@@ -223,6 +225,8 @@ func (t *TaskPacket) Description() string {
 	switch t.TaskTypeID {
 	case FibonacciTaskType:
 		return "Task to find Nth fibonacci number"
+	case CountPrimesTaskType:
+		return "Task to find the number of primes <= N"
 	default:
 		return "Unknown task type"
 	}

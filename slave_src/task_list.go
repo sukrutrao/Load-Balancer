@@ -1,6 +1,8 @@
 package slave
 
 import (
+	"math"
+
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/packets"
 )
@@ -29,7 +31,33 @@ func (s *Slave) runTask(t *packets.TaskPacket) {
 	switch t.TaskTypeID {
 	case packets.FibonacciTaskType:
 		RunFibTask(t)
+	case packets.CountPrimesTaskType:
+		CountPrimesTask(t)
 	default:
 		s.Logger.Error(logger.FormatLogMessage("msg", "Invalid Task Type"))
 	}
+}
+
+func CountPrimesTask(t *packets.TaskPacket) {
+	t.IntResult = countPrimes(t.N)
+}
+
+func countPrimes(N int) int {
+	if N <= 1 {
+		return 0
+	}
+	count := 0
+	for i := 2; i <= N; i++ {
+		isPrime := true
+		for j := 2; j < int(math.Sqrt(float64(i))); j++ {
+			if i%j == 0 {
+				isPrime = false
+				break
+			}
+		}
+		if isPrime {
+			count++
+		}
+	}
+	return count
 }

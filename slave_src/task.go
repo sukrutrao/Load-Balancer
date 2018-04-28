@@ -67,7 +67,9 @@ func (s *Slave) handleTask(t *SlaveTask) {
 func (s *Slave) displayResult(t *packets.TaskPacket, taskId int) {
 	switch t.TaskTypeID {
 	case packets.FibonacciTaskType:
-		s.Logger.Info("Task ID", strconv.Itoa(taskId), "Result: ", strconv.Itoa(int(t.Result)))
+		s.Logger.Info(logger.FormatLogMessage("Task ID", strconv.Itoa(taskId), "Result", strconv.Itoa(int(t.Result)), "Description", t.Description()))
+	case packets.CountPrimesTaskType:
+		s.Logger.Info(logger.FormatLogMessage("Task ID", strconv.Itoa(taskId), "Result", strconv.Itoa(int(t.IntResult)), "Description", t.Description()))
 	default:
 		s.Logger.Warning("msg", "Unknown Task Type")
 	}
