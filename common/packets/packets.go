@@ -15,6 +15,7 @@ import (
 
 // Types
 type PacketType uint8
+type Status int8
 
 const (
 	PacketTypeBeg PacketType = iota
@@ -28,8 +29,29 @@ const (
 	MonitorConnectionAck
 	MonitorRequest
 	MonitorResponse
+	TaskRequest
+	TaskRequestResponse
+	TaskResultResponse
+	TaskStatusRequest
+	TaskStatusResponse
 	PacketTypeEnd
 )
+
+// Status codes
+// TODO can we extend this for responses on whether to accept a task?
+// would give it finer granularity
+// specify an estimate when the slave might be free, so the master can query again?
+const (
+	Complete Status = iota
+	Incomplete
+	Invalid
+	Unassigned
+)
+
+type PacketTransmit struct {
+	Packet     interface{}
+	PacketType PacketType
+}
 
 func (pt PacketType) String() string {
 	switch pt {
@@ -53,6 +75,16 @@ func (pt PacketType) String() string {
 		return "MonitorRequest"
 	case MonitorResponse:
 		return "MonitorResponse"
+	case TaskRequest:
+		return "AssignTaskToSlave"
+	case TaskRequestResponse:
+		return "SlaveReplyToTaskAssignment"
+	case TaskResultResponse:
+		return "TaskResultFromSlave"
+	case TaskStatusRequest:
+		return "AskSlaveForTaskStatus"
+	case TaskStatusResponse:
+		return "SlaveReplyTaskStatus"
 	default:
 		return ""
 	}
@@ -109,6 +141,11 @@ func EncodePacket(packet interface{}, packetType PacketType) ([]byte, error) {
 	case LoadResponsePacket:
 	case MonitorRequestPacket:
 	case MonitorResponsePacket:
+	case TaskRequestPacket:
+	case TaskRequestResponsePacket:
+	case TaskResultResponsePacket:
+	case TaskStatusRequestPacket:
+	case TaskStatusResponsePacket:
 	default:
 		_ = t
 		return nil, errors.New("Invalid packet")
@@ -131,4 +168,40 @@ func DecodePacket(buf []byte, packet interface{}) error {
 
 	err := dec.Decode(packet)
 	return err
+}
+
+func CreatePacketTransmit(packet interface{}, packetType PacketType) PacketTransmit {
+	pt := PacketTransmit{packet, packetType}
+	return pt
+}
+
+type TaskRequestPacket struct {
+	TaskId int
+	Task   string // TODO - change this
+	Load   int
+}
+
+type TaskRequestResponsePacket struct {
+	TaskId int
+	Accept bool
+}
+
+type TaskResultResponsePacket struct {
+	TaskId     int
+	Result     string // TODO - change this
+	TaskStatus Status
+}
+
+type TaskStatusRequestPacket struct {
+	TaskId int
+}
+
+type TaskStatusResponsePacket struct {
+	TaskId     int
+	TaskStatus Status // from status constants in constants.go
+}
+
+// TODO - this should be in slave.go
+type TaskResult struct {
+	Result string
 }

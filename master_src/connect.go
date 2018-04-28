@@ -13,7 +13,6 @@ import (
 )
 
 func (m *Master) connect() {
-	m.closeWait.Add(1)
 	service := constants.BroadcastReceiveAddress.String() + ":" + strconv.Itoa(int(constants.MasterBroadcastPort))
 
 	udpAddr, err := net.ResolveUDPAddr("udp4", service)

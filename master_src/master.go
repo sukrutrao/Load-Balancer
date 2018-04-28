@@ -4,6 +4,8 @@ import (
 	"errors"
 	"io"
 	"net"
+	"os"
+	"os/signal"
 	"strconv"
 	"sync"
 	"time"
@@ -21,9 +23,14 @@ type Master struct {
 	broadcastIP net.IP
 	slavePool   *SlavePool
 	Logger      *logging.Logger
+	tasks       map[int]MasterTask
+	lastTaskId  int
+
+	serverHandler *Handler
 
 	unackedSlaves   map[string]struct{}
 	unackedSlaveMtx sync.RWMutex
+	loadBalancer    LoadBalancerInterface
 
 	monitor *Monitor
 
@@ -31,6 +38,17 @@ type Master struct {
 	closeWait sync.WaitGroup
 }
 
+// task as seen by master
+type MasterTask struct {
+	TaskId     int
+	Task       string
+	Load       int
+	AssignedTo *Slave
+	IsAssigned bool
+	TaskStatus packets.Status
+}
+
+// master constructor
 func (m *Master) initDS() {
 	m.close = make(chan struct{})
 	m.unackedSlaves = make(map[string]struct{})
@@ -44,15 +62,40 @@ func (m *Master) initDS() {
 		acked:       false,
 		logger:      m.Logger,
 	}
+	m.tasks = make(map[int]MasterTask)
+	m.lastTaskId = 0
+	m.loadBalancer = &RoundRobin{&LoadBalancerBase{slavePool: m.slavePool}, -1}
 }
 
+// run master
 func (m *Master) Run() {
+
+	{ // Handling ctrl+C for graceful shutdown.
+		c := make(chan os.Signal, 1)
+		signal.Notify(c, os.Interrupt)
+		go func() {
+			<-c
+			m.Logger.Info(logger.FormatLogMessage("msg", "Closing Master gracefully..."))
+			close(m.close)
+		}()
+	}
+
 	m.initDS()
 	m.updateAddress()
+	m.StartServer(&HTTPOptions{
+		Logger: m.Logger,
+	})
+	m.closeWait.Add(2)
 	go m.connect()
 	go m.gc_routine()
 	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
-
+	time.Sleep(10 * time.Second)
+	m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
+	for i := 0; i < 10; i++ {
+		m.assignNewTask("ABC", 10)
+		time.Sleep(2 * time.Second)
+	}
+	m.Logger.Info(logger.FormatLogMessage("msg", "Tasks complete"))
 	<-m.close
 	m.Close()
 }
@@ -150,18 +193,42 @@ func (m *Master) gc_routine() {
 		}
 		<-time.After(constants.GarbageCollectionInterval)
 	}
+	m.closeWait.Done()
 }
 
 func (m *Master) Close() {
 	m.Logger.Info(logger.FormatLogMessage("msg", "Closing Master gracefully..."))
+
+	// First stopping to accept any more tasks.
+	if err := m.serverHandler.Shutdown(); err != nil {
+		m.Logger.Error(logger.FormatLogMessage("msg", "Failed to ShutDown the server", "err", err.Error()))
+	}
+
+	// Closing all work of master.
 	select {
 	case <-m.close:
 	default:
 		close(m.close)
 	}
 	m.monitor.Close()
+
+	// Closing all slaves.
 	m.slavePool.Close(m.Logger)
+
 	m.closeWait.Wait()
+}
+
+// create task, find whom to assign, and send to that slave's channel
+func (m *Master) assignNewTask(task string, load int) error {
+	t := m.createTask(task, load)
+	s := m.assignTask(t)
+	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task, "Slave", strconv.Itoa(int(s.id)))) // TODO - cast may not be correct
+	p := m.assignTaskPacket(t)
+	pt := packets.CreatePacketTransmit(p, packets.TaskRequest) // TODO - fix this
+	s.sendChan <- pt
+	//	var packetType packets.TaskRequestPacket
+	//	s.sendChan <- packetType // TODO - this could cause issues, packaging with pt (above) would be better
+	return nil
 }
 
 //////////////////////////////////////////////////////////////////
@@ -276,6 +343,11 @@ type Slave struct {
 	loadReqPort uint16
 	reqSendPort uint16
 	Logger      *logging.Logger
+	maxLoad     int
+	currentLoad int
+
+	sendChan chan packets.PacketTransmit
+	//	recvChan chan struct{}
 
 	load              float64
 	lastLoadTimestamp time.Time
@@ -296,23 +368,33 @@ func (s *Slave) UpdateLoad(l float64, ts time.Time) {
 
 func (s *Slave) InitDS() {
 	s.close = make(chan struct{})
+	s.sendChan = make(chan packets.PacketTransmit)
+	s.currentLoad = 0
+	s.maxLoad = 1000
+	//	s.recvChan = make(chan struct{})
+	//	go s.sendChannelHandler()
+	//	go s.recvChannelHandler()
 }
 
 func (s *Slave) InitConnections() error {
+	s.closeWait.Add(1)
 	go s.loadRequestHandler()
+	go s.taskRequestHandler()
 	// go s.requestHandler()
 	return nil
 }
 
 func (s *Slave) loadRequestHandler() {
-	s.closeWait.Add(1)
 
 	address := s.ip + ":" + strconv.Itoa(int(s.loadReqPort))
+	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
+
 	conn, err := net.Dial("tcp", address)
 	if err != nil {
 		close(s.close)
 	}
 
+	s.closeWait.Add(1)
 	go s.loadRecvAndUpdater(conn)
 
 	end := false
@@ -342,7 +424,6 @@ func (s *Slave) loadRequestHandler() {
 }
 
 func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
-	s.closeWait.Add(1)
 	end := false
 	for !end {
 		select {
@@ -392,6 +473,95 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 	s.closeWait.Done()
 }
 
+func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
+	s.closeWait.Add(1)
+	end := false
+	for !end {
+		select {
+		case <-s.close:
+			end = true
+		default:
+			var buf [2048]byte
+			// TODO: add timeout
+			n, err := conn.Read(buf[0:])
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP"))
+				if err == io.EOF {
+					// TODO: remove myself from slavepool
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
+						"slave_id", strconv.Itoa(int(s.id))))
+					close(s.close)
+					end = true
+				}
+				continue
+			}
+
+			packetType, err := packets.GetPacketType(buf[:n])
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("err", err.Error()))
+				return
+			}
+
+			switch packetType {
+			case packets.TaskRequestResponse:
+				var p packets.TaskRequestResponsePacket
+				err := packets.DecodePacket(buf[:n], &p)
+				if err != nil {
+					s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+						"packet", packetType.String(), "err", err.Error()))
+					return
+				}
+
+				go s.handleTaskRequestResponse(p)
+
+			case packets.TaskResultResponse:
+				var p packets.TaskResultResponsePacket
+				err := packets.DecodePacket(buf[:n], &p)
+				if err != nil {
+					s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+						"packet", packetType.String(), "err", err.Error()))
+					return
+				}
+
+				go s.handleTaskResult(p)
+
+			case packets.TaskStatusResponse:
+				var p packets.TaskStatusResponsePacket
+				err := packets.DecodePacket(buf[:n], &p)
+				if err != nil {
+					s.Logger.Error(logger.FormatLogMessage("msg", "Failed to decode packet",
+						"packet", packetType.String(), "err", err.Error()))
+					return
+				}
+
+				go s.handleTaskStatusResponse(p)
+
+			default:
+				s.Logger.Warning(logger.FormatLogMessage("msg", "Received invalid packet"))
+			}
+		}
+	}
+	s.closeWait.Done()
+}
+
+func (s *Slave) taskRequestHandler() {
+	s.closeWait.Add(1)
+
+	address := s.ip + ":" + strconv.Itoa(int(s.reqSendPort))
+	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
+
+	conn, err := net.Dial("tcp", address)
+	if err != nil {
+		s.Logger.Fatal(logger.FormatLogMessage("Error!", "Error!"))
+		close(s.close)
+	}
+
+	go s.sendChannelHandler(conn)
+	go s.taskRecvAndUpdater(conn)
+
+	s.closeWait.Done()
+}
+
 // func (s *Slave) requestHandler() {
 // 	s.closeWait.Add(1)
 // 	s.closeWait.Done()
@@ -400,6 +570,40 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 func (s *Slave) Close() {
 	close(s.close)
 	s.closeWait.Wait()
+}
+
+func (s *Slave) sendChannelHandler(conn net.Conn) {
+	s.closeWait.Add(1)
+	end := false
+	for !end {
+		select {
+		case <-s.close:
+			end = true
+		default:
+			pt := <-s.sendChan
+			bytes, err := packets.EncodePacket(pt.Packet, pt.PacketType)
+			if err != nil {
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading packet to send"))
+				if err == io.EOF {
+					// TODO: remove myself from slavepool
+					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave", "slave_ip", s.ip,
+						"slave_id", strconv.Itoa(int(s.id))))
+					close(s.close)
+					end = true
+				}
+				continue
+			}
+			_, err = conn.Write(bytes)
+			if err != nil {
+				s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send packet",
+					"slave_ip", s.ip, "err", err.Error()))
+			}
+
+			<-time.After(constants.TaskInterval)
+
+		}
+	}
+	s.closeWait.Done()
 }
 
 // TODO: regularly send info request to all slaves.
