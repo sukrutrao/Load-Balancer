@@ -38,9 +38,10 @@ func (s *Slave) sendTaskResult(t *SlaveTask) {
 		s.Logger.Warning(logger.FormatLogMessage("msg", "Task is not yet complete", "Task ID", strconv.Itoa(int(t.TaskId))))
 		response.TaskStatus = packets.Incomplete
 	} else {
-		response.Result = t.Result
+		response.Result = t.Task
 		response.TaskStatus = packets.Complete
 		s.Logger.Info(logger.FormatLogMessage("msg", "Task is complete", "Task ID", strconv.Itoa(int(t.TaskId))))
+		s.displayResult(&t.Task, t.TaskId)
 	}
 	pt := packets.CreatePacketTransmit(response, packets.TaskResultResponse)
 	// s.Logger.Info(logger.FormatLogMessage("msg", "Sending result to channel"))
@@ -59,8 +60,17 @@ func (s *Slave) handleTask(t *SlaveTask) {
 	s.currentLoad += t.Load
 	s.Logger.Info(logger.FormatLogMessage("msg", "Handling Task", "Task ID", strconv.Itoa(int(t.TaskId))))
 	time.Sleep(10000 * time.Millisecond)
-	t.Result = "Complete"
+	s.runTask(&t.Task)
 	t.TaskStatus = packets.Complete
 	s.Logger.Info(logger.FormatLogMessage("msg", "Done Task", "Task ID", strconv.Itoa(int(t.TaskId))))
 	go s.sendTaskResult(t)
+}
+
+func (s *Slave) displayResult(t *packets.TaskPacket, taskId int) {
+	switch t.TaskTypeID {
+	case packets.FibonacciTaskType:
+		s.Logger.Info("Task ID", strconv.Itoa(taskId), "Result: ", strconv.Itoa(int(t.Result)))
+	default:
+		s.Logger.Warning("msg", "Unknown Task Type")
+	}
 }

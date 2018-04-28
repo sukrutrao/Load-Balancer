@@ -37,10 +37,10 @@ type Slave struct {
 
 type SlaveTask struct {
 	TaskId     int
-	Task       string
+	Task       packets.TaskPacket
 	Load       int
 	TaskStatus packets.Status
-	Result     string //*packets.TaskResult
+	//	Result     packets.TaskPacket *packets.TaskResult
 }
 
 func (s *Slave) initDS() {

@@ -38,12 +38,19 @@ func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
 	// if !ok {
 	// 	// TODO - handle error
 	// }
-	s.Logger.Info(logger.FormatLogMessage("Task ID completed", strconv.Itoa(int(packet.TaskId)), "Result", packet.Result))
+	t := packet.Result
+	switch t.TaskTypeID {
+	case packets.FibonacciTaskType:
+		s.Logger.Info(logger.FormatLogMessage("Task ID completed", strconv.Itoa(int(packet.TaskId)), "Result", strconv.Itoa(int(t.Result))))
+	default:
+		s.Logger.Info(logger.FormatLogMessage("msg", "Unknown Task Type"))
+	}
+
 	// TODO do something more meaningful
 }
 
 // takes task string and load and creates a task object
-func (m *Master) createTask(task string, load int) *MasterTask {
+func (m *Master) createTask(task packets.TaskPacket, load int) *MasterTask {
 	taskId := m.lastTaskId + 1
 	t := MasterTask{TaskId: taskId,
 		Task:       task,
