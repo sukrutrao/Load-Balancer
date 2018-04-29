@@ -43,8 +43,8 @@ func (s *Slave) sendTaskResult(t *SlaveTask) {
 		s.Logger.Info(logger.FormatLogMessage("msg", "Task is complete", "Task ID", strconv.Itoa(int(t.TaskId))))
 		s.displayResult(&t.Task, t.TaskId)
 	}
-	pt := packets.CreatePacketTransmit(response, packets.TaskResultResponse)
 	// s.Logger.Info(logger.FormatLogMessage("msg", "Sending result to channel"))
+	pt := packets.CreatePacketTransmit(response, packets.TaskResultResponse)
 	s.sendChan <- pt
 }
 

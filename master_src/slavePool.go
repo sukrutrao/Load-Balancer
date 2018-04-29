@@ -81,7 +81,7 @@ func (sp *SlavePool) Close(log *logging.Logger) {
 	}
 }
 
-func (sp *SlavePool) gc(log *logging.Logger) {
+func (sp *SlavePool) gc(log *logging.Logger) []*Slave {
 	toRemove := []int{}
 	for i, slave := range sp.slaves {
 		select {
@@ -92,6 +92,7 @@ func (sp *SlavePool) gc(log *logging.Logger) {
 		}
 	}
 
+	var slaves []*Slave
 	if len(toRemove) > 0 {
 		sp.mtx.Lock()
 		defer sp.mtx.Unlock()
@@ -99,8 +100,13 @@ func (sp *SlavePool) gc(log *logging.Logger) {
 		for i, idx := range toRemove {
 			log.Info(logger.FormatLogMessage("msg", "Slave removed in gc",
 				"slave_ip", sp.slaves[idx-i].ip, "slave_id", strconv.Itoa(int(sp.slaves[idx-i].id))))
+
+			slaves = append(slaves, sp.slaves[idx-i])
 			sp.slaves = append(sp.slaves[:idx-i], sp.slaves[idx+1-i:]...)
+
 		}
 
 	}
+
+	return slaves
 }

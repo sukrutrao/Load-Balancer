@@ -82,6 +82,11 @@ func (h *Handler) fibonaciiHandler(m *Master) func(w http.ResponseWriter, r *htt
 		case <-t.Close:
 			fmt.Fprint(w, t.Result)
 		case <-time.After(2 * time.Second):
+			select {
+			case <-t.Close:
+			default:
+				close(t.Close)
+			}
 			w.WriteHeader(500)
 			fmt.Fprint(w, "Task lost")
 		}

@@ -41,7 +41,9 @@ func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
 	t := packet.Result
 	switch t.TaskTypeID {
 	case packets.FibonacciTaskType:
+		GlobalTasksMtx.RLock()
 		orgTask := GlobalTasks[packet.TaskId]
+		GlobalTasksMtx.RUnlock()
 		orgTask.Task.Result = t.Result
 		select {
 		case <-orgTask.Task.Close:
@@ -65,7 +67,9 @@ func (m *Master) createTask(task *packets.TaskPacket, load int) *MasterTask {
 		AssignedTo: nil,
 		IsAssigned: false,
 		TaskStatus: packets.Unassigned}
+	GlobalTasksMtx.Lock()
 	GlobalTasks[taskId] = t
+	GlobalTasksMtx.Unlock()
 	m.lastTaskId += 1
 	return &t // TODO - is this safe?
 }

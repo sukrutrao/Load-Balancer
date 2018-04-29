@@ -13,6 +13,9 @@ type RoundRobin struct {
 // TODO - need locks here?
 func (r *RoundRobin) assignTask(load int) (*Slave, error) {
 	// TODO - need to lock Slavepool!!!
+	r.slavePool.mtx.RLock()
+	defer r.slavePool.mtx.RUnlock()
+
 	if len(r.slavePool.slaves) == 0 {
 		return nil, errors.New("No Slaves available")
 	}

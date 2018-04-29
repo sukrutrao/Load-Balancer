@@ -16,6 +16,7 @@ import (
 	"github.com/op/go-logging"
 )
 
+var GlobalTasksMtx sync.RWMutex
 var GlobalTasks map[int]MasterTask = make(map[int]MasterTask)
 
 // Master is used to store info of master node which is currently running
@@ -191,7 +192,26 @@ func (m *Master) gc_routine() {
 		case <-m.close:
 			end = true
 		default:
-			m.slavePool.gc(m.Logger)
+			removedSlaves := m.slavePool.gc(m.Logger)
+
+			// Reassigining tasks
+			for _, slave := range removedSlaves {
+				for _, tids := range slave.tasksUndertaken {
+					GlobalTasksMtx.RLock()
+					if packet, ok := GlobalTasks[tids]; ok {
+						GlobalTasksMtx.RUnlock()
+						select {
+						case <-packet.Task.Close:
+							GlobalTasksMtx.Lock()
+							delete(GlobalTasks, tids)
+							GlobalTasksMtx.Unlock()
+
+						default:
+							m.assignNewTask(packet.Task, 0)
+						}
+					}
+				}
+			}
 		}
 		<-time.After(constants.GarbageCollectionInterval)
 	}

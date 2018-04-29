@@ -380,6 +380,7 @@ func (s *Slave) reqListener(packetChan <-chan tcpData) {
 }
 
 func (s *Slave) sendChannelHandler(conn net.Conn) {
+	defer s.closeWait.Done()
 	end := false
 	for !end {
 		select {
@@ -399,5 +400,4 @@ func (s *Slave) sendChannelHandler(conn net.Conn) {
 
 		}
 	}
-	s.closeWait.Done()
 }

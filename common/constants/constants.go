@@ -14,7 +14,7 @@ var (
 const (
 	MasterBroadcastPort uint16 = 3000
 	HTTPServerPort      uint16 = 4242
-	MetricServerPort    uint16 = 4224
+	MetricServerPort    uint16 = 0
 )
 
 type PacketType int8
