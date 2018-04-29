@@ -25,10 +25,11 @@ build_node_exporter:
 	@go get github.com/prometheus/node_exporter
 
 run_master:
-	prometheus --config.file="config/prometheus.yml" 2> prometheus.log & ./master
+	./master
 
 run_slave:
-	prometheus --config.file="config/prometheus.yml" 2> prometheus.log & ./slave
+	cp config/prometheus.yml /tmp/prometheus.yml 
+	prometheus --web.enable-lifecycle --config.file="/tmp/prometheus.yml" 2> prometheus.log & ./slave
 
 run_monitoring:
 	sudo systemctl start grafana-server & ./monitoring
