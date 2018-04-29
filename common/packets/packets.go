@@ -110,6 +110,7 @@ type BroadcastConnectResponse struct {
 	Port        uint16
 	LoadReqPort uint16
 	ReqSendPort uint16
+	ReqRecvPort uint16
 }
 
 type LoadRequestPacket struct {

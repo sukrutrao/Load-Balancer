@@ -43,7 +43,11 @@ func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
 	case packets.FibonacciTaskType:
 		orgTask := GlobalTasks[packet.TaskId]
 		orgTask.Task.Result = t.Result
-		close(orgTask.Task.Close)
+		select {
+		case <-orgTask.Task.Close:
+		default:
+			close(orgTask.Task.Close)
+		}
 		s.Logger.Info(logger.FormatLogMessage("Task ID completed", strconv.Itoa(int(packet.TaskId)), "Result", strconv.Itoa(int(t.Result))))
 	default:
 		s.Logger.Info(logger.FormatLogMessage("msg", "Unknown Task Type"))

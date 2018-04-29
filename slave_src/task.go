@@ -1,8 +1,8 @@
 package slave
 
 import (
-	"fmt"
-	/*	"net"*/
+	// "fmt"
+	// "net"
 	"strconv"
 
 	// "github.com/GoodDeeds/load-balancer/common/constants"
@@ -45,7 +45,6 @@ func (s *Slave) sendTaskResult(t *SlaveTask) {
 	}
 	pt := packets.CreatePacketTransmit(response, packets.TaskResultResponse)
 	// s.Logger.Info(logger.FormatLogMessage("msg", "Sending result to channel"))
-	fmt.Println("SENT!")
 	s.sendChan <- pt
 }
 

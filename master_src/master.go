@@ -1,7 +1,7 @@
 package master
 
 import (
-	"fmt"
+	// "fmt"
 	"net"
 	// "os"
 	// "os/signal"
@@ -88,15 +88,15 @@ func (m *Master) Run() {
 	go m.connect()
 	go m.gc_routine()
 	m.Logger.Info(logger.FormatLogMessage("msg", "Master running"))
-	time.Sleep(5 * time.Second)
-	m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
-	for i := 0; i < 10; i++ {
-		t := packets.TaskPacket{TaskTypeID: packets.FibonacciTaskType, N: i + 1, Close: make(chan struct{})}
-		m.assignNewTask(&t, i+1)
-		<-t.Close
-		fmt.Println(t.Result)
-		// time.Sleep(2 * time.Second)
-	}
+	// time.Sleep(5 * time.Second)
+	// m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
+	// for i := 0; i < 10; i++ {
+	// 	t := packets.TaskPacket{TaskTypeID: packets.FibonacciTaskType, N: i + 1, Close: make(chan struct{})}
+	// 	m.assignNewTask(&t, i+1)
+	// 	<-t.Close
+	// 	fmt.Println(t.Result)
+	// 	// time.Sleep(2 * time.Second)
+	// }
 	m.Logger.Info(logger.FormatLogMessage("msg", "Tasks complete"))
 	<-m.close
 	m.Close()
@@ -227,6 +227,7 @@ func (m *Master) assignNewTask(task *packets.TaskPacket, load int) error {
 	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task.Description(), "Slave", strconv.Itoa(int(s.id)))) // TODO - cast may not be correct
 	p := m.assignTaskPacket(t)
 	pt := packets.CreatePacketTransmit(p, packets.TaskRequest) // TODO - fix this
+	s.tasksUndertaken = append(s.tasksUndertaken, t.TaskId)
 	s.sendChan <- pt
 	//	var packetType packets.TaskRequestPacket
 	//	s.sendChan <- packetType // TODO - this could cause issues, packaging with pt (above) would be better

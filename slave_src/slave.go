@@ -22,7 +22,10 @@ type Slave struct {
 	myIP        net.IP
 	broadcastIP net.IP
 	loadReqPort uint16
+
+	reqRecvPort uint16
 	reqSendPort uint16
+
 	master      Master
 	currentLoad int
 	maxLoad     int

@@ -5,6 +5,7 @@ import (
 	"github.com/GoodDeeds/load-balancer/common/packets"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/GoodDeeds/load-balancer/common/constants"
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -77,8 +78,13 @@ func (h *Handler) fibonaciiHandler(m *Master) func(w http.ResponseWriter, r *htt
 			Close:      make(chan struct{}),
 		}
 		m.assignNewTask(&t, nInt)
-		<-t.Close
-		fmt.Fprint(w, t.Result)
+		select {
+		case <-t.Close:
+			fmt.Fprint(w, t.Result)
+		case <-time.After(2 * time.Second):
+			w.WriteHeader(500)
+			fmt.Fprint(w, "Task lost")
+		}
 	}
 }
 

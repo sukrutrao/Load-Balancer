@@ -1,7 +1,7 @@
 package master
 
 import (
-	"fmt"
+	// "fmt"
 	"io"
 	"net"
 	"strconv"
@@ -20,12 +20,13 @@ type Slave struct {
 	id          uint16
 	loadReqPort uint16
 	reqSendPort uint16
+	reqRecvPort uint16
 	Logger      *logging.Logger
 	maxLoad     int
 	currentLoad int
 
-	sendChan chan packets.PacketTransmit
-	//	recvChan chan struct{}
+	sendChan        chan packets.PacketTransmit
+	tasksUndertaken []int
 
 	load              float64
 	lastLoadTimestamp time.Time
@@ -59,7 +60,6 @@ func (s *Slave) InitConnections() error {
 	go s.loadRequestHandler()
 	s.closeWait.Add(1)
 	go s.taskRequestHandler()
-	// go s.requestHandler()
 	return nil
 }
 
@@ -159,19 +159,32 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 
 func (s *Slave) taskRequestHandler() {
 
-	address := s.ip + ":" + strconv.Itoa(int(s.reqSendPort))
-	// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
+	{
+		address := s.ip + ":" + strconv.Itoa(int(s.reqSendPort))
+		// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
 
-	conn, err := net.Dial("tcp", address)
-	if err != nil {
-		s.Logger.Fatal(logger.FormatLogMessage("Error!", "Error!"))
-		close(s.close)
+		connSend, err := net.Dial("tcp", address)
+		if err != nil {
+			s.Logger.Fatal(logger.FormatLogMessage("Error!", "Error!"))
+			close(s.close)
+		}
+
+		s.closeWait.Add(1)
+		go s.sendChannelHandler(connSend)
 	}
+	{
+		address := s.ip + ":" + strconv.Itoa(int(s.reqRecvPort))
+		// s.Logger.Info(logger.FormatLogMessage("loadReqPort", strconv.Itoa(int(s.loadReqPort)), "reqSendPort", strconv.Itoa(int(s.reqSendPort))))
 
-	s.closeWait.Add(1)
-	go s.sendChannelHandler(conn)
-	s.closeWait.Add(1)
-	go s.taskRecvAndUpdater(conn)
+		connRecv, err := net.Dial("tcp", address)
+		if err != nil {
+			s.Logger.Fatal(logger.FormatLogMessage("Error!", "Error!"))
+			close(s.close)
+		}
+
+		s.closeWait.Add(1)
+		go s.taskRecvAndUpdater(connRecv)
+	}
 
 	s.closeWait.Done()
 }
@@ -241,7 +254,6 @@ func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
 
 			switch packetType {
 			case packets.TaskRequestResponse:
-				fmt.Println("Received req!")
 				var p packets.TaskRequestResponsePacket
 				err := packets.DecodePacket(packet.buf[:packet.n], &p)
 				if err != nil {
@@ -260,7 +272,6 @@ func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
 						"packet", packetType.String(), "err", err.Error()))
 					return
 				}
-				fmt.Println("Received res!")
 				go s.handleTaskResult(p)
 
 			case packets.TaskStatusResponse:
@@ -284,11 +295,6 @@ func (s *Slave) taskRecvAndUpdater(conn net.Conn) {
 	}
 	s.closeWait.Done()
 }
-
-// func (s *Slave) requestHandler() {
-// 	s.closeWait.Add(1)
-// 	s.closeWait.Done()
-// }
 
 func (s *Slave) Close() {
 	select {
