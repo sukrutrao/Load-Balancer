@@ -4,6 +4,7 @@ import (
 	// "fmt"
 	// "net"
 	"strconv"
+	//	"time"
 
 	// "github.com/GoodDeeds/load-balancer/common/constants"
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -60,6 +61,7 @@ func (s *Slave) handleTask(t *SlaveTask) {
 	s.currentLoad += t.Load
 	s.Logger.Info(logger.FormatLogMessage("msg", "Handling Task", "Task ID", strconv.Itoa(int(t.TaskId))))
 	s.runTask(&t.Task)
+	//	time.Sleep(2 * time.Second)
 	t.TaskStatus = packets.Complete
 	s.Logger.Info(logger.FormatLogMessage("msg", "Done Task", "Task ID", strconv.Itoa(int(t.TaskId))))
 	s.sendTaskResult(t)

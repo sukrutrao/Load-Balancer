@@ -1,6 +1,7 @@
 package master
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -75,13 +76,13 @@ func (m *Master) createTask(task *packets.TaskPacket, load int) *MasterTask {
 }
 
 // takes a task, finds which slave to assign to, assigns it in task packet, and returns slave index
-func (m *Master) assignTask(t *MasterTask) *Slave {
+func (m *Master) assignTask(t *MasterTask) (*Slave, error) {
 	slaveAssigned, err := m.loadBalancer.assignTask(t.Load) // m.slavePool.slaves[0] // TODO Fix this based on algorithm for load balancing
 	if err != nil {
-		m.Logger.Fatal(logger.FormatLogMessage("err", "Assign Task Failed, Handle Error TODO", "error", err.Error()))
-		// TODO Handle error
+		m.Logger.Error(logger.FormatLogMessage("err", "Assign Task Failed, Handle Error TODO", "error", err.Error()))
+		return nil, errors.New("Assign Task Failed")
 	}
 	t.AssignedTo = slaveAssigned
 	t.IsAssigned = true
-	return slaveAssigned
+	return slaveAssigned, nil
 }

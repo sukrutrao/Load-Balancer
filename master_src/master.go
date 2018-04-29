@@ -1,7 +1,7 @@
 package master
 
 import (
-	// "fmt"
+	"fmt"
 	"net"
 	// "os"
 	// "os/signal"
@@ -64,7 +64,7 @@ func (m *Master) initDS() {
 		logger:      m.Logger,
 	}
 	m.lastTaskId = 0
-	m.loadBalancer = &RoundRobin{&LoadBalancerBase{slavePool: m.slavePool}, -1}
+	m.loadBalancer = &LeastDifference{&LoadBalancerBase{slavePool: m.slavePool}}
 }
 
 // run master
@@ -93,12 +93,13 @@ func (m *Master) Run() {
 	// m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
 	// for i := 0; i < 10; i++ {
 	// 	t := packets.TaskPacket{TaskTypeID: packets.FibonacciTaskType, N: i + 1, Close: make(chan struct{})}
+	// 	fmt.Println(i)
 	// 	m.assignNewTask(&t, i+1)
 	// 	<-t.Close
 	// 	fmt.Println(t.Result)
 	// 	// time.Sleep(2 * time.Second)
 	// }
-	m.Logger.Info(logger.FormatLogMessage("msg", "Tasks complete"))
+	// m.Logger.Info(logger.FormatLogMessage("msg", "Tasks complete"))
 	<-m.close
 	m.Close()
 }
@@ -243,8 +244,16 @@ func (m *Master) Close() {
 // create task, find whom to assign, and send to that slave's channel
 func (m *Master) assignNewTask(task *packets.TaskPacket, load int) error {
 	t := m.createTask(task, load)
-	s := m.assignTask(t)
-	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task.Description(), "Slave", strconv.Itoa(int(s.id)))) // TODO - cast may not be correct
+	var s *Slave
+	var err error
+	for {
+		s, err = m.assignTask(t)
+		if err == nil {
+			break
+		}
+		time.Sleep(1 * time.Second)
+	}
+	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task.Description(), "Slave", strconv.Itoa(int(s.id))))
 	p := m.assignTaskPacket(t)
 	pt := packets.CreatePacketTransmit(p, packets.TaskRequest) // TODO - fix this
 	s.tasksUndertaken = append(s.tasksUndertaken, t.TaskId)
