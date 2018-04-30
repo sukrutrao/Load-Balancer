@@ -33,15 +33,14 @@ var fns = template.FuncMap{
 	"plus1": func(x int) int {
 		return x + 1
 	},
-	"x_axis": func(x int) int {
-		if x%2 == 0 {
-			return 0
-		} else {
-			return 12
-		}
-	},
 	"y_axis": func(x int) int {
-		return 9 * (x / 2)
+		return 9 * x
+	},
+	"cpu_id": func(x int) int {
+		return x * 2
+	},
+	"custom_id": func(x int) int {
+		return (x * 2) + 1
 	},
 }
 
@@ -103,84 +102,172 @@ var addDashboardTmpl *template.Template = template.Must(template.New("addDashboa
 			{{range $i, $e := .Datasources }}
 	
 			{
-			"aliasColors": {},
-			"bars": false,
-			"dashLength": 10,
-			"dashes": false,
-			"datasource": "{{$e.Label}}",
-			"fill": 1,
-			"gridPos": {
-				"h": 9,
-				"w": 12,
-				"x": {{(x_axis $i)}},
-				"y": {{(y_axis $i)}}
-			},
-			"id": {{$i}},
-			"legend": {
-				"avg": false,
-				"current": false,
-				"max": false,
-				"min": false,
-				"show": true,
-				"total": false,
-				"values": false
-			},
-			"lines": true,
-			"linewidth": 1,
-			"links": [],
-			"nullPointMode": "null",
-			"percentage": false,
-			"pointradius": 5,
-			"points": false,
-			"renderer": "flot",
-			"seriesOverrides": [],
-			"spaceLength": 10,
-			"stack": false,
-			"steppedLine": false,
-			"targets": [
-				{
-					"expr": "rate(node_cpu_seconds_total{instance=\"localhost:9100\",job=\"node_exporter\",mode=\"user\"}[10s])",
-					"format": "time_series",
-					"intervalFactor": 1,
-					"refId": "A"
-				}
-			],
-			"thresholds": [],
-			"timeFrom": null,
-			"timeShift": null,
-			"title": "Slave {{$e.IP}}",
-			"tooltip": {
-				"shared": true,
-				"sort": 0,
-				"value_type": "individual"
-			},
-			"type": "graph",
-			"xaxis": {
-				"buckets": null,
-				"mode": "time",
-				"name": null,
-				"show": true,
-				"values": []
-			},
-			"yaxes": [
-				{
-					"format": "short",
-					"label": null,
-					"logBase": 1,
-					"max": null,
-					"min": null,
-					"show": true
+				"aliasColors": {},
+				"bars": false,
+				"dashLength": 10,
+				"dashes": false,
+				"datasource": "{{$e.Label}}",
+				"fill": 1,
+				"gridPos": {
+					"h": 9,
+					"w": 12,
+					"x": 0,
+					"y": {{(y_axis $i)}}
+				},
+				"id": {{(cpu_id $i)}},
+				"legend": {
+					"avg": false,
+					"current": false,
+					"max": false,
+					"min": false,
+					"show": true,
+					"total": false,
+					"values": false
+				},
+				"lines": true,
+				"linewidth": 1,
+				"links": [],
+				"nullPointMode": "null",
+				"percentage": false,
+				"pointradius": 5,
+				"points": false,
+				"renderer": "flot",
+				"seriesOverrides": [],
+				"spaceLength": 10,
+				"stack": false,
+				"steppedLine": false,
+				"targets": [
+					{
+						"expr": "rate(node_cpu_seconds_total{instance=\"localhost:9100\",job=\"node_exporter\",mode=\"user\"}[10s])",
+						"format": "time_series",
+						"intervalFactor": 1,
+						"refId": "A"
+					}
+				],
+				"thresholds": [],
+				"timeFrom": null,
+				"timeShift": null,
+				"title": "Slave CPU Usage {{$e.IP}}",
+				"tooltip": {
+					"shared": true,
+					"sort": 0,
+					"value_type": "individual"
+				},
+				"type": "graph",
+				"xaxis": {
+					"buckets": null,
+					"mode": "time",
+					"name": null,
+					"show": true,
+					"values": []
+				},
+				"yaxes": [
+					{
+						"format": "short",
+						"label": null,
+						"logBase": 1,
+						"max": null,
+						"min": null,
+						"show": true
+					},
+					{
+						"format": "short",
+						"label": null,
+						"logBase": 1,
+						"max": null,
+						"min": null,
+						"show": true
+					}
+				]
 				},
 				{
-					"format": "short",
-					"label": null,
-					"logBase": 1,
-					"max": null,
-					"min": null,
-					"show": true
-				}
-			]
-			} {{if ne (plus1 $i) $n}},{{end}}
+					"aliasColors": {},
+					"bars": false,
+					"dashLength": 10,
+					"dashes": false,
+					"datasource": "{{$e.Label}}",
+					"fill": 1,
+					"gridPos": {
+						"h": 9,
+						"w": 12,
+						"x": 12,
+						"y": {{(y_axis $i)}}
+					},
+					"id": {{(custom_id $i)}},
+					"legend": {
+						"avg": false,
+						"current": false,
+						"max": false,
+						"min": false,
+						"show": true,
+						"total": false,
+						"values": false
+					},
+					"lines": true,
+					"linewidth": 1,
+					"links": [],
+					"nullPointMode": "null",
+					"percentage": false,
+					"pointradius": 5,
+					"points": false,
+					"renderer": "flot",
+					"seriesOverrides": [],
+					"spaceLength": 10,
+					"stack": false,
+					"steppedLine": false,
+					"targets": [
+						{
+							"expr": "sum_over_time(tasks_requested[10s])",
+							"format": "time_series",
+							"intervalFactor": 1
+						},
+						{
+							"expr": "sum_over_time(tasks_completed[10s])",
+							"format": "time_series",
+							"intervalFactor": 1
+						},
+						{
+							"expr": "current_load",
+							"format": "time_series",
+							"intervalFactor": 1
+						}
+					],
+					"thresholds": [],
+					"timeFrom": null,
+					"timeShift": null,
+					"title": "Slave Task Count {{$e.IP}}",
+					"tooltip": {
+						"shared": true,
+						"sort": 0,
+						"value_type": "individual"
+					},
+					"type": "graph",
+					"xaxis": {
+						"buckets": null,
+						"mode": "time",
+						"name": null,
+						"show": true,
+						"values": []
+					},
+					"yaxes": [
+						{
+							"format": "short",
+							"label": null,
+							"logBase": 1,
+							"max": null,
+							"min": null,
+							"show": true
+						},
+						{
+							"format": "short",
+							"label": null,
+							"logBase": 1,
+							"max": null,
+							"min": null,
+							"show": true
+						}
+					]
+					} {{if ne (plus1 $i) $n}},{{end}}
 	
 			{{- end}}
 	

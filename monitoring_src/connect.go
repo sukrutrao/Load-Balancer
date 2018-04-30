@@ -16,9 +16,6 @@ import (
 
 func (mo *Monitor) connect() error {
 
-	// TODO: store the ip of the master
-
-	// TODO: create a TCP connection for info and requests.
 	err := mo.initListeners()
 	utility.CheckFatal(err, mo.Logger)
 
@@ -53,7 +50,6 @@ func (mo *Monitor) connect() error {
 		utility.CheckFatal(err, mo.Logger)
 
 		var buf [2048]byte
-		// TODO: add timeout
 		n, _, err := connRecv.ReadFromUDP(buf[:])
 		if err != nil {
 			mo.Logger.Error(logger.FormatLogMessage("err", err.Error()))
@@ -143,7 +139,6 @@ func (mo *Monitor) initReqListener() error {
 func (mo *Monitor) reqListenManager(ln net.Listener) {
 	defer mo.closeWait.Done()
 
-	// TODO: handle error in accept
 	ln.(*net.TCPListener).SetDeadline(time.Now().Add(constants.MonitorConnectionAcceptTimeout))
 	conn, err := ln.Accept()
 	if err != nil {
@@ -153,7 +148,6 @@ func (mo *Monitor) reqListenManager(ln net.Listener) {
 	mo.closeWait.Add(1)
 	go mo.reqRecvAndUpdater(conn)
 
-	// TODO: send requests from time to time
 	end := false
 	for !end {
 		select {
@@ -187,10 +181,11 @@ func (mo *Monitor) reqRecvAndUpdater(conn net.Conn) {
 		default:
 			// NOTE: make sure this size can fit the max slaves.
 			var buf [2048]byte
-			// TODO: add timeout
 			conn.SetReadDeadline(time.Now().Add(constants.MonitorReceiveTimeout))
 			n, err := conn.Read(buf[0:])
-			if err != nil {
+			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+				continue
+			} else if err != nil {
 				mo.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
 					close(mo.close)

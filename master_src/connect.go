@@ -29,7 +29,6 @@ func (m *Master) connect() {
 		select {
 		case <-m.close:
 			// Master is closed.
-			// TODO: end connection with slaves.
 			m.Logger.Info(logger.FormatLogMessage("msg", "Stopping to accept new slave connections"))
 			end = true
 		default:
@@ -101,7 +100,6 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 			isAck := false
 
 			if m.slavePool.NumSlaves() < constants.MaxSlaves {
-				// TODO: instead of ip, check ip and port combination.
 				if !m.SlaveExists(p.Source, p.Port) {
 					isAck = true
 					m.unackedSlaveMtx.Lock()
@@ -155,6 +153,7 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 					id:          p.Port,
 					loadReqPort: p.LoadReqPort,
 					reqSendPort: p.ReqSendPort,
+					reqRecvPort: p.ReqRecvPort,
 				})
 				m.Logger.Info(logger.FormatLogMessage("msg", "Connection request granted", "ip", p.IP.String(), "port", portStr))
 			} else {

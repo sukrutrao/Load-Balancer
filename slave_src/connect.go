@@ -2,9 +2,11 @@ package slave
 
 import (
 	"errors"
+	// "fmt"
 	"io"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -12,13 +14,11 @@ import (
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/packets"
 	"github.com/GoodDeeds/load-balancer/common/utility"
+	"github.com/cloudfoundry/gosigar"
 )
 
 func (s *Slave) connect() error {
 
-	// TODO: store the ip of the master
-
-	// TODO: create a TCP connection for info and requests.
 	err := s.initListeners()
 	utility.CheckFatal(err, s.Logger)
 
@@ -53,10 +53,11 @@ func (s *Slave) connect() error {
 		utility.CheckFatal(err, s.Logger)
 
 		var buf [2048]byte
-		// TODO: add timeout
 		connRecv.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 		n, _, err := connRecv.ReadFromUDP(buf[:])
-		if err != nil {
+		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			continue
+		} else if err != nil {
 			s.Logger.Error(logger.FormatLogMessage("err", err.Error()))
 			tries++
 			continue
@@ -93,7 +94,8 @@ func (s *Slave) connect() error {
 		IP:          s.myIP,
 		Port:        myPort,
 		LoadReqPort: s.loadReqPort,
-		ReqSendPort: s.reqSendPort,
+		ReqSendPort: s.reqRecvPort,
+		ReqRecvPort: s.reqSendPort,
 	}
 	ackBytes, err := packets.EncodePacket(ack, packets.ConnectionAck)
 	utility.CheckFatal(err, s.Logger)
@@ -110,6 +112,7 @@ func (s *Slave) connect() error {
 	}
 
 	s.Logger.Info(logger.FormatLogMessage("msg", "Connection response", "ack", strconv.FormatBool(p.Ack), "server_ip", p.IP.String()))
+	s.closeWait.Done()
 	return nil
 }
 
@@ -141,13 +144,18 @@ func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData
 			end = true
 		default:
 			var buf [2048]byte
-			// TODO: add timeout
 			conn.SetReadDeadline(time.Now().Add(constants.SlaveReceiveTimeout))
 			n, err := conn.Read(buf[0:])
-			if err != nil {
+			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+				continue
+			} else if err != nil {
 				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
-					close(s.close)
+					select {
+					case <-s.close:
+					default:
+						close(s.close)
+					}
 					end = true
 				}
 				continue
@@ -182,7 +190,6 @@ func (s *Slave) initLoadListener() error {
 
 func (s *Slave) loadListenManager(ln net.Listener) {
 
-	// TODO: handle error in accept
 	ln.(*net.TCPListener).SetDeadline(time.Now().Add(constants.SlaveConnectionAcceptTimeout))
 	conn, _ := ln.Accept()
 
@@ -227,10 +234,22 @@ func (s *Slave) loadListener(conn net.Conn, packetChan <-chan tcpData) {
 				return
 			}
 
-			// TODO: respond with proper load
+			var multiplier float32
+			concreteSigar := sigar.ConcreteSigar{}
+
+			uptime := sigar.Uptime{}
+			uptime.Get()
+			avg, err := concreteSigar.GetLoadAverage()
+			if err != nil {
+				multiplier = 0.5
+			} else {
+				multiplier = float32(avg.One / float64(runtime.NumCPU()))
+			}
+
 			res := packets.LoadResponsePacket{
 				Timestamp: time.Now(),
-				Load:      3.1415,
+				Load:      uint64(float32(s.currentLoad) * multiplier),
+				MaxLoad:   s.maxLoad,
 			}
 
 			bytes, err := packets.EncodePacket(res, packets.LoadResponse)
@@ -261,28 +280,52 @@ func (s *Slave) loadListener(conn net.Conn, packetChan <-chan tcpData) {
 /// Request listener
 
 func (s *Slave) initReqListener() error {
-	ln, err := net.Listen("tcp", s.myIP.String()+":0")
+	lnSend, err := net.Listen("tcp", s.myIP.String()+":0")
 	if err != nil {
 		return err
 	}
 
+	lnRecv, err := net.Listen("tcp", s.myIP.String()+":0")
+	if err != nil {
+		return err
+	}
 	s.closeWait.Add(1)
-	go s.reqListenManager(ln)
+	go s.reqListenManager(lnSend, lnRecv)
 
-	port := ln.Addr().(*net.TCPAddr).Port
+	port := lnSend.Addr().(*net.TCPAddr).Port
 	s.reqSendPort = uint16(port)
+
+	port = lnRecv.Addr().(*net.TCPAddr).Port
+	s.reqRecvPort = uint16(port)
+
 	return nil
 }
 
-func (s *Slave) reqListenManager(ln net.Listener) {
+func (s *Slave) reqListenManager(lnSend net.Listener, lnRecv net.Listener) {
 
-	// TODO: handle error in accept
-	ln.(*net.TCPListener).SetDeadline(time.Now().Add(constants.SlaveConnectionAcceptTimeout))
-	conn, _ := ln.Accept()
+	var connSend, connRecv net.Conn
+
+	wc := make(chan struct{})
+
+	go func() {
+		lnSend.(*net.TCPListener).SetDeadline(time.Now().Add(constants.SlaveConnectionAcceptTimeout))
+		connSend, _ = lnSend.Accept()
+		wc <- struct{}{}
+	}()
+
+	go func() {
+		lnRecv.(*net.TCPListener).SetDeadline(time.Now().Add(constants.SlaveConnectionAcceptTimeout))
+		connRecv, _ = lnRecv.Accept()
+		wc <- struct{}{}
+	}()
+
+	<-wc
+	<-wc
 
 	packetChan := make(chan tcpData)
-	go s.collectIncomingRequests(conn, packetChan)
-	go s.sendChannelHandler(conn)
+	go s.collectIncomingRequests(connRecv, packetChan)
+	s.closeWait.Add(1)
+	go s.sendChannelHandler(connSend)
 
 	end := false
 	for !end {
@@ -292,14 +335,14 @@ func (s *Slave) reqListenManager(ln net.Listener) {
 			end = true
 			break
 		default:
-			s.reqListener(conn, packetChan)
+			s.reqListener(packetChan)
 		}
 	}
 
 	s.closeWait.Done()
 }
 
-func (s *Slave) reqListener(conn net.Conn, packetChan <-chan tcpData) {
+func (s *Slave) reqListener(packetChan <-chan tcpData) {
 
 	select {
 	case packet, ok := <-packetChan:
@@ -314,10 +357,6 @@ func (s *Slave) reqListener(conn net.Conn, packetChan <-chan tcpData) {
 		}
 
 		switch packetType {
-		// TODO: call functions from Sukrut
-		// Structure
-		// case packets.ThePacketType:
-		// Get packet from bytes and call appropriate function.
 		case packets.TaskRequest:
 			var p packets.TaskRequestPacket
 			err := packets.DecodePacket(packet.buf[:packet.n], &p)
@@ -348,7 +387,7 @@ func (s *Slave) reqListener(conn net.Conn, packetChan <-chan tcpData) {
 }
 
 func (s *Slave) sendChannelHandler(conn net.Conn) {
-	s.closeWait.Add(1)
+	defer s.closeWait.Done()
 	end := false
 	for !end {
 		select {
@@ -358,12 +397,7 @@ func (s *Slave) sendChannelHandler(conn net.Conn) {
 			pt := <-s.sendChan
 			bytes, err := packets.EncodePacket(pt.Packet, pt.PacketType)
 			if err != nil {
-				if err == io.EOF {
-					// TODO: remove myself from slavepool
-					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing slave"))
-					close(s.close)
-					end = true
-				}
+				s.Logger.Error(logger.FormatLogMessage("msg", "Error in encoding packet", "err", err.Error()))
 				continue
 			}
 			_, err = conn.Write(bytes)
@@ -371,9 +405,6 @@ func (s *Slave) sendChannelHandler(conn net.Conn) {
 				s.Logger.Warning(logger.FormatLogMessage("msg", "Failed to send packet", "err", err.Error()))
 			}
 
-			<-time.After(constants.TaskInterval)
-
 		}
 	}
-	s.closeWait.Done()
 }

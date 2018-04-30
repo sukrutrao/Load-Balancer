@@ -22,31 +22,42 @@ type Slave struct {
 	myIP        net.IP
 	broadcastIP net.IP
 	loadReqPort uint16
+
+	reqRecvPort uint16
 	reqSendPort uint16
+
 	master      Master
-	currentLoad int
-	maxLoad     int
+	currentLoad uint64
+	maxLoad     uint64
 	sendChan    chan packets.PacketTransmit
 
 	Logger *logging.Logger
+
+	serverHandler *Handler
+	metric        Metric
 
 	close     chan struct{}
 	closeWait sync.WaitGroup
 	tasks     map[int]SlaveTask
 }
 
+type Metric struct {
+	TasksCompleted uint32
+	TasksAccepted  uint32
+	TasksRequested uint32
+}
+
 type SlaveTask struct {
 	TaskId     int
-	Task       string
-	Load       int
+	Task       packets.TaskPacket
+	Load       uint64
 	TaskStatus packets.Status
-	Result     string //*packets.TaskResult
+	//	Result     packets.TaskPacket *packets.TaskResult
 }
 
 func (s *Slave) initDS() {
 	s.close = make(chan struct{})
-	s.currentLoad = 0
-	s.maxLoad = 1000
+	s.maxLoad = 10000000
 	s.tasks = make(map[int]SlaveTask)
 	s.sendChan = make(chan packets.PacketTransmit)
 }
@@ -58,23 +69,17 @@ type TaskResult struct {
 // Run starts the slave
 func (s *Slave) Run() {
 
-	// { // Handling ctrl+C for graceful shutdown.
-	// 	c := make(chan os.Signal, 1)
-	// 	signal.Notify(c, os.Interrupt)
-	// 	go func() {
-	// 		<-c
-	// 		s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
-	// 		close(s.close)
-	// 	}()
-	// }
-
 	s.initDS()
 	s.updateAddress()
-	s.Logger.Info(logger.FormatLogMessage("msg", "Slave running"))
+	s.StartServer(&HTTPOptions{
+		Logger: s.Logger,
+	})
+	s.closeWait.Add(1)
 	if err := s.connect(); err != nil {
 		s.Logger.Error(logger.FormatLogMessage("msg", "Failed to connect to master", "err", err.Error()))
 		s.Close()
 	}
+	s.Logger.Info(logger.FormatLogMessage("msg", "Slave running"))
 	s.closeWait.Wait()
 }
 
@@ -92,6 +97,11 @@ func (s *Slave) updateAddress() {
 
 func (s *Slave) Close() {
 	s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
+
+	if err := s.serverHandler.Shutdown(); err != nil {
+		s.Logger.Error(logger.FormatLogMessage("msg", "Failed to ShutDown the server", "err", err.Error()))
+	}
+
 	close(s.close)
 	s.closeWait.Wait()
 }

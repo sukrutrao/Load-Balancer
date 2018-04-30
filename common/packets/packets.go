@@ -15,6 +15,7 @@ import (
 
 // Types
 type PacketType uint8
+type TaskType uint8
 type Status int8
 
 const (
@@ -37,10 +38,22 @@ const (
 	PacketTypeEnd
 )
 
+// Task Type IDs
+const (
+	FibonacciTaskType TaskType = iota
+	CountPrimesTaskType
+)
+
+var LoadFunctions map[TaskType]func(int) uint64 = map[TaskType]func(int) uint64{
+	FibonacciTaskType: func(n int) uint64 {
+		return uint64(n)
+	},
+	CountPrimesTaskType: func(n int) uint64 {
+		return uint64(n) * uint64(n)
+	},
+}
+
 // Status codes
-// TODO can we extend this for responses on whether to accept a task?
-// would give it finer granularity
-// specify an estimate when the slave might be free, so the master can query again?
 const (
 	Complete Status = iota
 	Incomplete
@@ -103,6 +116,7 @@ type BroadcastConnectResponse struct {
 	Port        uint16
 	LoadReqPort uint16
 	ReqSendPort uint16
+	ReqRecvPort uint16
 }
 
 type LoadRequestPacket struct {
@@ -111,7 +125,8 @@ type LoadRequestPacket struct {
 
 type LoadResponsePacket struct {
 	Timestamp time.Time
-	Load      float64
+	Load      uint64
+	MaxLoad   uint64
 }
 
 type MonitorRequestPacket struct {
@@ -177,8 +192,8 @@ func CreatePacketTransmit(packet interface{}, packetType PacketType) PacketTrans
 
 type TaskRequestPacket struct {
 	TaskId int
-	Task   string // TODO - change this
-	Load   int
+	Task   TaskPacket
+	Load   uint64
 }
 
 type TaskRequestResponsePacket struct {
@@ -188,7 +203,7 @@ type TaskRequestResponsePacket struct {
 
 type TaskResultResponsePacket struct {
 	TaskId     int
-	Result     string // TODO - change this
+	Result     TaskPacket
 	TaskStatus Status
 }
 
@@ -201,7 +216,25 @@ type TaskStatusResponsePacket struct {
 	TaskStatus Status // from status constants in constants.go
 }
 
-// TODO - this should be in slave.go
 type TaskResult struct {
 	Result string
+}
+
+type TaskPacket struct {
+	TaskTypeID TaskType
+	N          int
+	Result     uint64
+	IntResult  int
+	Close      chan struct{}
+}
+
+func (t *TaskPacket) Description() string {
+	switch t.TaskTypeID {
+	case FibonacciTaskType:
+		return "Task to find Nth fibonacci number"
+	case CountPrimesTaskType:
+		return "Task to find the number of primes <= N"
+	default:
+		return "Unknown task type"
+	}
 }
