@@ -7,7 +7,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"time"
 
 	"github.com/GoodDeeds/load-balancer/common/constants"
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -70,9 +69,7 @@ func (s *Slave) StartServer(opts *HTTPOptions) {
 		f.Close()
 		panic(err)
 	}
-	f.Sync()
 
-	// TODO: handle overwrite
 	s.serverHandler.Port = listener.Addr().(*net.TCPAddr).Port
 	text := "\n"
 	text += "  - job_name: 'slave_" + strconv.Itoa(s.serverHandler.Port) + "'\n"
@@ -83,9 +80,9 @@ func (s *Slave) StartServer(opts *HTTPOptions) {
 		panic(err)
 	}
 
+	f.Sync()
 	f.Close()
 
-	time.Sleep(5 * time.Second)
 	cmd := exec.Command("curl", "-s", "-XPOST", "localhost:9090/-/reload")
 	err = cmd.Run()
 	if err != nil {
@@ -101,8 +98,9 @@ func (h *Handler) serverOk(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) metricHandler(s *Slave) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		fmt.Fprintf(w, "tasks_requested{instance=\"localhost:%d\"} %d\n", h.Port, s.metric.TasksRequested)
-		fmt.Fprintf(w, "tasks_completed{instance=\"localhost:%d\"} %d\n", h.Port, s.metric.TasksCompleted)
+		fmt.Fprintf(w, "tasks_requested{type=\"requested\"} %d\n", s.metric.TasksRequested)
+		fmt.Fprintf(w, "tasks_accepted{type=\"accepted\"} %d\n", s.metric.TasksAccepted)
+		fmt.Fprintf(w, "tasks_completed{type=\"completed\"} %d\n", s.metric.TasksCompleted)
 	}
 }
 

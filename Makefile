@@ -27,9 +27,13 @@ build_node_exporter:
 run_master:
 	./master
 
-run_slave:
+slave_preproc:
 	cp config/prometheus.yml /tmp/prometheus.yml 
-	prometheus --web.enable-lifecycle --config.file="/tmp/prometheus.yml" 2> prometheus.log & ./slave
+	nohup prometheus --web.enable-lifecycle --config.file="/tmp/prometheus.yml" 2> prometheus.log &
+	sleep 5
+
+run_slave:
+	./slave
 
 run_monitoring:
 	sudo systemctl start grafana-server & ./monitoring

@@ -1,6 +1,7 @@
 package slave
 
 import (
+	"sync/atomic"
 	/*	"net"*/
 	"strconv"
 	"time"
@@ -12,6 +13,7 @@ import (
 
 func (s *Slave) getTask(p packets.TaskRequestPacket) {
 	response := packets.TaskRequestResponsePacket{TaskId: p.TaskId}
+	atomic.AddUint32(&s.metric.TasksRequested, 1)
 	if s.currentLoad+p.Load > s.maxLoad {
 		response.Accept = false
 		s.Logger.Warning(logger.FormatLogMessage("msg", "Slave refused task due to load limit", "Task ID", strconv.Itoa(int(p.TaskId))))
@@ -19,6 +21,7 @@ func (s *Slave) getTask(p packets.TaskRequestPacket) {
 		t := SlaveTask{TaskId: p.TaskId, Task: p.Task, Load: p.Load, TaskStatus: packets.Incomplete}
 		go s.handleTask(&t)
 		response.Accept = true
+		atomic.AddUint32(&s.metric.TasksAccepted, 1)
 		s.Logger.Info(logger.FormatLogMessage("msg", "Slave accepted task", "Task ID", strconv.Itoa(int(p.TaskId))))
 	}
 	pt := packets.CreatePacketTransmit(response, packets.TaskRequestResponse)
@@ -44,6 +47,7 @@ func (s *Slave) sendTaskResult(t *SlaveTask) {
 	}
 	pt := packets.CreatePacketTransmit(response, packets.TaskResultResponse)
 	// s.Logger.Info(logger.FormatLogMessage("msg", "Sending result to channel"))
+	atomic.AddUint32(&s.metric.TasksCompleted, 1)
 	s.sendChan <- pt
 }
 

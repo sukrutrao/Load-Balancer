@@ -39,8 +39,9 @@ type Slave struct {
 }
 
 type Metric struct {
-	TasksCompleted uint
-	TasksRequested uint
+	TasksCompleted uint32
+	TasksAccepted  uint32
+	TasksRequested uint32
 }
 
 type SlaveTask struct {
