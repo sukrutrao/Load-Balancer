@@ -222,12 +222,12 @@ var addDashboardTmpl *template.Template = template.Must(template.New("addDashboa
 							"intervalFactor": 1
 						},
 						{
-							"expr": "sum_over_time(tasks_accepted[10s])",
+							"expr": "sum_over_time(tasks_completed[10s])",
 							"format": "time_series",
 							"intervalFactor": 1
 						},
 						{
-							"expr": "sum_over_time(tasks_completed[10s])",
+							"expr": "current_load",
 							"format": "time_series",
 							"intervalFactor": 1
 						}

@@ -57,8 +57,7 @@ type SlaveTask struct {
 
 func (s *Slave) initDS() {
 	s.close = make(chan struct{})
-	s.currentLoad = 0
-	s.maxLoad = 1000
+	s.maxLoad = 10000000
 	s.tasks = make(map[int]SlaveTask)
 	s.sendChan = make(chan packets.PacketTransmit)
 }
@@ -69,16 +68,6 @@ type TaskResult struct {
 
 // Run starts the slave
 func (s *Slave) Run() {
-
-	// { // Handling ctrl+C for graceful shutdown.
-	// 	c := make(chan os.Signal, 1)
-	// 	signal.Notify(c, os.Interrupt)
-	// 	go func() {
-	// 		<-c
-	// 		s.Logger.Info(logger.FormatLogMessage("msg", "Closing Slave gracefully..."))
-	// 		close(s.close)
-	// 	}()
-	// }
 
 	s.initDS()
 	s.updateAddress()

@@ -1,8 +1,6 @@
 package master
 
 import (
-	"fmt"
-	// "fmt"
 	"io"
 	"net"
 	"strconv"
@@ -112,9 +110,7 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 			// TODO: add timeout
 			conn.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 			n, err := conn.Read(buf[0:])
-			fmt.Println("NNN ", n)
 			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
-				fmt.Println("Came here")
 				continue
 			} else if err != nil {
 				// s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))

@@ -99,8 +99,8 @@ func (h *Handler) serverOk(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) metricHandler(s *Slave) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprintf(w, "tasks_requested{type=\"requested\"} %d\n", s.metric.TasksRequested)
-		fmt.Fprintf(w, "tasks_accepted{type=\"accepted\"} %d\n", s.metric.TasksAccepted)
 		fmt.Fprintf(w, "tasks_completed{type=\"completed\"} %d\n", s.metric.TasksCompleted)
+		fmt.Fprintf(w, "current_load{type=\"current_load\"} %d\n", s.currentLoad)
 	}
 }
 

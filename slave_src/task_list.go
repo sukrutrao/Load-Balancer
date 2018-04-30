@@ -40,7 +40,7 @@ func (s *Slave) runTask(t *packets.TaskPacket) {
 }
 
 func CountPrimesTask(t *packets.TaskPacket) {
-	t.IntResult = countPrimes(t.N)
+	t.Result = uint64(countPrimes(t.N))
 }
 
 func countPrimes(N int) int {

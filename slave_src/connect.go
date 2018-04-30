@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"os"
+	"runtime"
 	"strconv"
 	"time"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/packets"
 	"github.com/GoodDeeds/load-balancer/common/utility"
+	"github.com/cloudfoundry/gosigar"
 )
 
 func (s *Slave) connect() error {
@@ -238,10 +240,21 @@ func (s *Slave) loadListener(conn net.Conn, packetChan <-chan tcpData) {
 				return
 			}
 
-			// TODO: respond with proper load
+			var multiplier float32
+			concreteSigar := sigar.ConcreteSigar{}
+
+			uptime := sigar.Uptime{}
+			uptime.Get()
+			avg, err := concreteSigar.GetLoadAverage()
+			if err != nil {
+				multiplier = 0.5
+			} else {
+				multiplier = float32(avg.One / float64(runtime.NumCPU()))
+			}
+
 			res := packets.LoadResponsePacket{
 				Timestamp: time.Now(),
-				Load:      s.currentLoad,
+				Load:      uint64(float32(s.currentLoad) * multiplier),
 				MaxLoad:   s.maxLoad,
 			}
 

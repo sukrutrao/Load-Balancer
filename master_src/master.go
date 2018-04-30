@@ -1,10 +1,8 @@
 package master
 
 import (
-	//	"fmt"
+	"errors"
 	"net"
-	// "os"
-	// "os/signal"
 	"strconv"
 	"sync"
 	"time"
@@ -64,23 +62,24 @@ func (m *Master) initDS() {
 		logger:      m.Logger,
 	}
 	m.lastTaskId = 0
-	m.loadBalancer = &RoundRobin{&LoadBalancerBase{slavePool: m.slavePool}, -1}
 }
 
 // run master
-func (m *Master) Run() {
-
-	// { // Handling ctrl+C for graceful shutdown.
-	// 	c := make(chan os.Signal, 1)
-	// 	signal.Notify(c, os.Interrupt)
-	// 	go func() {
-	// 		<-c
-	// 		m.Logger.Info(logger.FormatLogMessage("msg", "Closing Master gracefully..."))
-	// 		close(m.close)
-	// 	}()
-	// }
+func (m *Master) Run(algo string) {
 
 	m.initDS()
+	switch algo {
+	case "first_available":
+		m.loadBalancer = &FirstAvailable{&LoadBalancerBase{slavePool: m.slavePool}}
+	case "round_robin":
+		m.loadBalancer = &RoundRobin{&LoadBalancerBase{slavePool: m.slavePool}, -1}
+	case "least_difference":
+		m.loadBalancer = &LeastDifference{&LoadBalancerBase{slavePool: m.slavePool}}
+	case "least_load":
+		m.loadBalancer = &LeastLoad{&LoadBalancerBase{slavePool: m.slavePool}}
+	default:
+		m.loadBalancer = &RoundRobin{&LoadBalancerBase{slavePool: m.slavePool}, -1}
+	}
 	m.updateAddress()
 	m.StartServer(&HTTPOptions{
 		Logger: m.Logger,
@@ -246,13 +245,15 @@ func (m *Master) assignNewTask(task *packets.TaskPacket, load uint64) error {
 	t := m.createTask(task, load)
 	var s *Slave
 	var err error
-	for {
+	s, err = m.assignTask(t)
+	if err != nil {
+		time.Sleep(1 * time.Second)
 		s, err = m.assignTask(t)
 		if err == nil {
-			break
+			return errors.New("Slave cant handle it")
 		}
-		time.Sleep(1 * time.Second)
 	}
+
 	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task.Description(), "Slave", strconv.Itoa(int(s.id))))
 	p := m.assignTaskPacket(t)
 	pt := packets.CreatePacketTransmit(p, packets.TaskRequest) // TODO - fix this
