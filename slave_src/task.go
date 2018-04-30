@@ -23,6 +23,8 @@ func (s *Slave) getTask(p packets.TaskRequestPacket) {
 		t := SlaveTask{TaskId: p.TaskId, Task: p.Task, Load: p.Load, TaskStatus: packets.Incomplete}
 		go s.handleTask(&t)
 		response.Accept = true
+
+		atomic.AddUint64(&s.currentLoad, packets.LoadFunctions[p.Task.TaskTypeID](p.Task.N))
 		atomic.AddUint32(&s.metric.TasksAccepted, 1)
 		s.Logger.Info(logger.FormatLogMessage("msg", "Slave accepted task", "Task ID", strconv.Itoa(int(p.TaskId))))
 	}
@@ -49,6 +51,7 @@ func (s *Slave) sendTaskResult(t *SlaveTask) {
 		s.displayResult(&t.Task, t.TaskId)
 	}
 	// s.Logger.Info(logger.FormatLogMessage("msg", "Sending result to channel"))
+	atomic.AddUint64(&s.currentLoad, -packets.LoadFunctions[t.Task.TaskTypeID](t.Task.N))
 	atomic.AddUint32(&s.metric.TasksCompleted, 1)
 	pt := packets.CreatePacketTransmit(response, packets.TaskResultResponse)
 	s.sendChan <- pt

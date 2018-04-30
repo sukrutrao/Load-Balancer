@@ -77,7 +77,7 @@ func (h *Handler) fibonaciiHandler(m *Master) func(w http.ResponseWriter, r *htt
 			N:          nInt,
 			Close:      make(chan struct{}),
 		}
-		m.assignNewTask(&t, nInt)
+		m.assignNewTask(&t, uint64(nInt))
 		select {
 		case <-t.Close:
 			fmt.Fprint(w, t.Result)

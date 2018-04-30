@@ -10,7 +10,7 @@ type LeastLoad struct {
 }
 
 // TODO - need locks here?
-func (l *LeastLoad) assignTask(load int) (*Slave, error) {
+func (l *LeastLoad) assignTask(load uint64) (*Slave, error) {
 	// TODO - need to lock Slavepool!!!
 	l.slavePool.mtx.RLock()
 	defer l.slavePool.mtx.RUnlock()

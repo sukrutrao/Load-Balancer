@@ -1,6 +1,7 @@
 package master
 
 import (
+	"fmt"
 	// "fmt"
 	"io"
 	"net"
@@ -22,13 +23,12 @@ type Slave struct {
 	reqSendPort uint16
 	reqRecvPort uint16
 	Logger      *logging.Logger
-	maxLoad     int
-	currentLoad int
+	maxLoad     uint64
+	currentLoad uint64
 
 	sendChan        chan packets.PacketTransmit
 	tasksUndertaken []int
 
-	load              float64
 	lastLoadTimestamp time.Time
 	mtx               sync.RWMutex
 
@@ -36,11 +36,12 @@ type Slave struct {
 	closeWait sync.WaitGroup
 }
 
-func (s *Slave) UpdateLoad(l float64, ts time.Time) {
+func (s *Slave) UpdateLoad(l uint64, ml uint64, ts time.Time) {
 	s.mtx.Lock()
 	defer s.mtx.Unlock()
 	if ts.After(s.lastLoadTimestamp) {
-		s.load = l
+		s.currentLoad = l
+		s.maxLoad = ml
 		s.lastLoadTimestamp = ts
 	}
 }
@@ -48,8 +49,6 @@ func (s *Slave) UpdateLoad(l float64, ts time.Time) {
 func (s *Slave) InitDS() {
 	s.close = make(chan struct{})
 	s.sendChan = make(chan packets.PacketTransmit)
-	s.currentLoad = 0
-	s.maxLoad = 1000
 	//	s.recvChan = make(chan struct{})
 	//	go s.sendChannelHandler()
 	//	go s.recvChannelHandler()
@@ -113,7 +112,11 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 			// TODO: add timeout
 			conn.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 			n, err := conn.Read(buf[0:])
-			if err != nil {
+			fmt.Println("NNN ", n)
+			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+				fmt.Println("Came here")
+				continue
+			} else if err != nil {
 				// s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
 					// TODO: remove myself from slavepool
@@ -145,7 +148,7 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 					return
 				}
 
-				s.UpdateLoad(p.Load, p.Timestamp)
+				s.UpdateLoad(p.Load, p.MaxLoad, p.Timestamp)
 				// s.Logger.Info(logger.FormatLogMessage("msg", "Load updated",
 				// 	"slave_ip", s.ip, "slave_id", strconv.Itoa(int(s.id)), "load", strconv.FormatFloat(p.Load, 'E', -1, 64)))
 
@@ -205,7 +208,9 @@ func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData
 			// TODO: add timeout
 			conn.SetReadDeadline(time.Now().Add(constants.SlaveReceiveTimeout))
 			n, err := conn.Read(buf[0:])
-			if err != nil {
+			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+				continue
+			} else if err != nil {
 				// s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
 					s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))

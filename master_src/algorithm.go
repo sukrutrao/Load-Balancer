@@ -11,7 +11,7 @@ import (
 type LoadBalancerInterface interface {
 	// addSlave(slave *slave.Slave) (*Slave, error)
 	// removeSlave(id int) error
-	assignTask(load int) (*Slave, error)
+	assignTask(load uint64) (*Slave, error)
 	// may need more functions for more specialized kind of assignments
 }
 
@@ -34,7 +34,7 @@ type LoadBalancerBase struct {
 // }
 
 // TODO - I am not sure if all functions need to be implemented, so a dummy
-func (l *LoadBalancerBase) assignTask(load int) (*Slave, error) {
+func (l *LoadBalancerBase) assignTask(load uint64) (*Slave, error) {
 	for i := range l.slavePool.slaves {
 		if l.slavePool.slaves[i].currentLoad+load <= l.slavePool.slaves[i].maxLoad {
 			l.slavePool.slaves[i].currentLoad += load

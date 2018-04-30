@@ -43,7 +43,7 @@ type Master struct {
 type MasterTask struct {
 	TaskId     int
 	Task       *packets.TaskPacket
-	Load       int
+	Load       uint64
 	AssignedTo *Slave
 	IsAssigned bool
 	TaskStatus packets.Status
@@ -64,7 +64,7 @@ func (m *Master) initDS() {
 		logger:      m.Logger,
 	}
 	m.lastTaskId = 0
-	m.loadBalancer = &LeastDifference{&LoadBalancerBase{slavePool: m.slavePool}}
+	m.loadBalancer = &RoundRobin{&LoadBalancerBase{slavePool: m.slavePool}, -1}
 }
 
 // run master
@@ -242,7 +242,7 @@ func (m *Master) Close() {
 }
 
 // create task, find whom to assign, and send to that slave's channel
-func (m *Master) assignNewTask(task *packets.TaskPacket, load int) error {
+func (m *Master) assignNewTask(task *packets.TaskPacket, load uint64) error {
 	t := m.createTask(task, load)
 	var s *Slave
 	var err error

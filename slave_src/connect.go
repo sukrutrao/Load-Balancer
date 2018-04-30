@@ -57,7 +57,9 @@ func (s *Slave) connect() error {
 		// TODO: add timeout
 		connRecv.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 		n, _, err := connRecv.ReadFromUDP(buf[:])
-		if err != nil {
+		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+			continue
+		} else if err != nil {
 			s.Logger.Error(logger.FormatLogMessage("err", err.Error()))
 			tries++
 			continue
@@ -147,7 +149,9 @@ func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData
 			// TODO: add timeout
 			conn.SetReadDeadline(time.Now().Add(constants.SlaveReceiveTimeout))
 			n, err := conn.Read(buf[0:])
-			if err != nil {
+			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+				continue
+			} else if err != nil {
 				s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
 					select {
@@ -237,7 +241,8 @@ func (s *Slave) loadListener(conn net.Conn, packetChan <-chan tcpData) {
 			// TODO: respond with proper load
 			res := packets.LoadResponsePacket{
 				Timestamp: time.Now(),
-				Load:      3.1415,
+				Load:      s.currentLoad,
+				MaxLoad:   s.maxLoad,
 			}
 
 			bytes, err := packets.EncodePacket(res, packets.LoadResponse)

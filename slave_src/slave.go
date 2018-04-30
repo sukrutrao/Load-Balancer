@@ -27,8 +27,8 @@ type Slave struct {
 	reqSendPort uint16
 
 	master      Master
-	currentLoad int
-	maxLoad     int
+	currentLoad uint64
+	maxLoad     uint64
 	sendChan    chan packets.PacketTransmit
 
 	Logger *logging.Logger
@@ -50,7 +50,7 @@ type Metric struct {
 type SlaveTask struct {
 	TaskId     int
 	Task       packets.TaskPacket
-	Load       int
+	Load       uint64
 	TaskStatus packets.Status
 	//	Result     packets.TaskPacket *packets.TaskResult
 }

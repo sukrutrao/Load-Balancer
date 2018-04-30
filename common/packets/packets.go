@@ -44,6 +44,15 @@ const (
 	CountPrimesTaskType
 )
 
+var LoadFunctions map[TaskType]func(int) uint64 = map[TaskType]func(int) uint64{
+	FibonacciTaskType: func(n int) uint64 {
+		return uint64(n)
+	},
+	CountPrimesTaskType: func(n int) uint64 {
+		return uint64(n) * uint64(n)
+	},
+}
+
 // Status codes
 // TODO can we extend this for responses on whether to accept a task?
 // would give it finer granularity
@@ -119,7 +128,8 @@ type LoadRequestPacket struct {
 
 type LoadResponsePacket struct {
 	Timestamp time.Time
-	Load      float64
+	Load      uint64
+	MaxLoad   uint64
 }
 
 type MonitorRequestPacket struct {
@@ -186,7 +196,7 @@ func CreatePacketTransmit(packet interface{}, packetType PacketType) PacketTrans
 type TaskRequestPacket struct {
 	TaskId int
 	Task   TaskPacket // TODO - change this
-	Load   int
+	Load   uint64
 }
 
 type TaskRequestResponsePacket struct {

@@ -60,7 +60,7 @@ func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
 }
 
 // takes task string and load and creates a task object
-func (m *Master) createTask(task *packets.TaskPacket, load int) *MasterTask {
+func (m *Master) createTask(task *packets.TaskPacket, load uint64) *MasterTask {
 	taskId := m.lastTaskId + 1
 	t := MasterTask{TaskId: taskId,
 		Task:       task,

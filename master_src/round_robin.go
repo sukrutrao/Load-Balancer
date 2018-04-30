@@ -11,7 +11,7 @@ type RoundRobin struct {
 }
 
 // TODO - need locks here?
-func (r *RoundRobin) assignTask(load int) (*Slave, error) {
+func (r *RoundRobin) assignTask(load uint64) (*Slave, error) {
 	// TODO - need to lock Slavepool!!!
 	r.slavePool.mtx.RLock()
 	defer r.slavePool.mtx.RUnlock()

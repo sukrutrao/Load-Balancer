@@ -190,7 +190,9 @@ func (mo *Monitor) reqRecvAndUpdater(conn net.Conn) {
 			// TODO: add timeout
 			conn.SetReadDeadline(time.Now().Add(constants.MonitorReceiveTimeout))
 			n, err := conn.Read(buf[0:])
-			if err != nil {
+			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
+				continue
+			} else if err != nil {
 				mo.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
 					close(mo.close)
