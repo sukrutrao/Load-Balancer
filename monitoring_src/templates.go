@@ -217,17 +217,17 @@ var addDashboardTmpl *template.Template = template.Must(template.New("addDashboa
 					"steppedLine": false,
 					"targets": [
 						{
-							"expr": "rate(tasks_requested[10s])",
+							"expr": "sum_over_time(tasks_requested[10s])",
 							"format": "time_series",
 							"intervalFactor": 1
 						},
 						{
-							"expr": "rate(tasks_accepted[10s])",
+							"expr": "sum_over_time(tasks_accepted[10s])",
 							"format": "time_series",
 							"intervalFactor": 1
 						},
 						{
-							"expr": "rate(tasks_completed[10s])",
+							"expr": "sum_over_time(tasks_completed[10s])",
 							"format": "time_series",
 							"intervalFactor": 1
 						}

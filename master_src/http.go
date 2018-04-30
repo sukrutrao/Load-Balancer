@@ -2,8 +2,10 @@ package master
 
 import (
 	"fmt"
+	"github.com/GoodDeeds/load-balancer/common/packets"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/GoodDeeds/load-balancer/common/constants"
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -31,7 +33,7 @@ func (m *Master) StartServer(opts *HTTPOptions) {
 	m.serverHandler.server = &http.Server{Addr: listenPortStr}
 
 	http.HandleFunc("/ok", m.serverHandler.serverOk)
-	http.HandleFunc("/test", m.serverHandler.testRequest)
+	http.HandleFunc("/fibonacii", m.serverHandler.fibonaciiHandler(m))
 
 	m.Logger.Info(logger.FormatLogMessage("msg", "Starting the server"))
 
@@ -55,8 +57,40 @@ func (h *Handler) serverOk(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprint(w, "Server is running")
 }
 
-func (h *Handler) testRequest(w http.ResponseWriter, r *http.Request) {
-	// h.m.assignNewTask("test", 3.1415)
+func (h *Handler) fibonaciiHandler(m *Master) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		n, ok := r.URL.Query()["n"]
+		if !ok || len(n) == 0 {
+			w.WriteHeader(400)
+			fmt.Fprint(w, "Needs parameter n")
+			return
+		}
+		nInt, err := strconv.Atoi(n[0])
+		if err != nil {
+			w.WriteHeader(400)
+			fmt.Fprint(w, "Parameters are improper")
+			return
+		}
+
+		t := packets.TaskPacket{
+			TaskTypeID: packets.FibonacciTaskType,
+			N:          nInt,
+			Close:      make(chan struct{}),
+		}
+		m.assignNewTask(&t, nInt)
+		select {
+		case <-t.Close:
+			fmt.Fprint(w, t.Result)
+		case <-time.After(2 * time.Second):
+			select {
+			case <-t.Close:
+			default:
+				close(t.Close)
+			}
+			w.WriteHeader(500)
+			fmt.Fprint(w, "Task lost")
+		}
+	}
 }
 
 func (h *Handler) Shutdown() error {

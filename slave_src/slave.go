@@ -22,7 +22,10 @@ type Slave struct {
 	myIP        net.IP
 	broadcastIP net.IP
 	loadReqPort uint16
+
+	reqRecvPort uint16
 	reqSendPort uint16
+
 	master      Master
 	currentLoad int
 	maxLoad     int
@@ -46,10 +49,10 @@ type Metric struct {
 
 type SlaveTask struct {
 	TaskId     int
-	Task       string
+	Task       packets.TaskPacket
 	Load       int
 	TaskStatus packets.Status
-	Result     string //*packets.TaskResult
+	//	Result     packets.TaskPacket *packets.TaskResult
 }
 
 func (s *Slave) initDS() {
@@ -82,6 +85,7 @@ func (s *Slave) Run() {
 	s.StartServer(&HTTPOptions{
 		Logger: s.Logger,
 	})
+	s.closeWait.Add(1)
 	if err := s.connect(); err != nil {
 		s.Logger.Error(logger.FormatLogMessage("msg", "Failed to connect to master", "err", err.Error()))
 		s.Close()

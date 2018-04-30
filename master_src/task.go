@@ -1,6 +1,7 @@
 package master
 
 import (
+	"errors"
 	"strconv"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -8,7 +9,7 @@ import (
 )
 
 func (m *Master) assignTaskPacket(t *MasterTask) packets.TaskRequestPacket {
-	packet := packets.TaskRequestPacket{t.TaskId, t.Task, t.Load}
+	packet := packets.TaskRequestPacket{t.TaskId, *t.Task, t.Load}
 	return packet
 }
 
@@ -38,12 +39,28 @@ func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
 	// if !ok {
 	// 	// TODO - handle error
 	// }
-	s.Logger.Info(logger.FormatLogMessage("Task ID completed", strconv.Itoa(int(packet.TaskId)), "Result", packet.Result))
+	t := packet.Result
+	switch t.TaskTypeID {
+	case packets.FibonacciTaskType:
+		GlobalTasksMtx.RLock()
+		orgTask := GlobalTasks[packet.TaskId]
+		GlobalTasksMtx.RUnlock()
+		orgTask.Task.Result = t.Result
+		select {
+		case <-orgTask.Task.Close:
+		default:
+			close(orgTask.Task.Close)
+		}
+		s.Logger.Info(logger.FormatLogMessage("Task ID completed", strconv.Itoa(int(packet.TaskId)), "Result", strconv.Itoa(int(t.Result))))
+	default:
+		s.Logger.Info(logger.FormatLogMessage("msg", "Unknown Task Type"))
+	}
+
 	// TODO do something more meaningful
 }
 
 // takes task string and load and creates a task object
-func (m *Master) createTask(task string, load int) *MasterTask {
+func (m *Master) createTask(task *packets.TaskPacket, load int) *MasterTask {
 	taskId := m.lastTaskId + 1
 	t := MasterTask{TaskId: taskId,
 		Task:       task,
@@ -51,19 +68,21 @@ func (m *Master) createTask(task string, load int) *MasterTask {
 		AssignedTo: nil,
 		IsAssigned: false,
 		TaskStatus: packets.Unassigned}
-	m.tasks[taskId] = t
+	GlobalTasksMtx.Lock()
+	GlobalTasks[taskId] = t
+	GlobalTasksMtx.Unlock()
 	m.lastTaskId += 1
 	return &t // TODO - is this safe?
 }
 
 // takes a task, finds which slave to assign to, assigns it in task packet, and returns slave index
-func (m *Master) assignTask(t *MasterTask) *Slave {
+func (m *Master) assignTask(t *MasterTask) (*Slave, error) {
 	slaveAssigned, err := m.loadBalancer.assignTask(t.Load) // m.slavePool.slaves[0] // TODO Fix this based on algorithm for load balancing
 	if err != nil {
-		m.Logger.Fatal(logger.FormatLogMessage("err", "Assign Task Failed, Handle Error TODO", "error", err.Error()))
-		// TODO Handle error
+		m.Logger.Error(logger.FormatLogMessage("err", "Assign Task Failed, Handle Error TODO", "error", err.Error()))
+		return nil, errors.New("Assign Task Failed")
 	}
 	t.AssignedTo = slaveAssigned
 	t.IsAssigned = true
-	return slaveAssigned
+	return slaveAssigned, nil
 }

@@ -155,6 +155,7 @@ func (m *Master) handleClient(conn *net.UDPConn, packetChan <-chan connectionReq
 					id:          p.Port,
 					loadReqPort: p.LoadReqPort,
 					reqSendPort: p.ReqSendPort,
+					reqRecvPort: p.ReqRecvPort,
 				})
 				m.Logger.Info(logger.FormatLogMessage("msg", "Connection request granted", "ip", p.IP.String(), "port", portStr))
 			} else {

@@ -2,9 +2,11 @@ package slave
 
 import (
 	"sync/atomic"
-	/*	"net"*/
+	// "fmt"
+	// "net"
+
 	"strconv"
-	"time"
+	//	"time"
 
 	// "github.com/GoodDeeds/load-balancer/common/constants"
 	"github.com/GoodDeeds/load-balancer/common/logger"
@@ -41,13 +43,14 @@ func (s *Slave) sendTaskResult(t *SlaveTask) {
 		s.Logger.Warning(logger.FormatLogMessage("msg", "Task is not yet complete", "Task ID", strconv.Itoa(int(t.TaskId))))
 		response.TaskStatus = packets.Incomplete
 	} else {
-		response.Result = t.Result
+		response.Result = t.Task
 		response.TaskStatus = packets.Complete
 		s.Logger.Info(logger.FormatLogMessage("msg", "Task is complete", "Task ID", strconv.Itoa(int(t.TaskId))))
+		s.displayResult(&t.Task, t.TaskId)
 	}
-	pt := packets.CreatePacketTransmit(response, packets.TaskResultResponse)
 	// s.Logger.Info(logger.FormatLogMessage("msg", "Sending result to channel"))
 	atomic.AddUint32(&s.metric.TasksCompleted, 1)
+	pt := packets.CreatePacketTransmit(response, packets.TaskResultResponse)
 	s.sendChan <- pt
 }
 
@@ -62,9 +65,20 @@ func (s *Slave) getStatus(taskId int) (status packets.Status) {
 func (s *Slave) handleTask(t *SlaveTask) {
 	s.currentLoad += t.Load
 	s.Logger.Info(logger.FormatLogMessage("msg", "Handling Task", "Task ID", strconv.Itoa(int(t.TaskId))))
-	time.Sleep(10000 * time.Millisecond)
-	t.Result = "Complete"
+	s.runTask(&t.Task)
+	//	time.Sleep(2 * time.Second)
 	t.TaskStatus = packets.Complete
 	s.Logger.Info(logger.FormatLogMessage("msg", "Done Task", "Task ID", strconv.Itoa(int(t.TaskId))))
-	go s.sendTaskResult(t)
+	s.sendTaskResult(t)
+}
+
+func (s *Slave) displayResult(t *packets.TaskPacket, taskId int) {
+	switch t.TaskTypeID {
+	case packets.FibonacciTaskType:
+		s.Logger.Info(logger.FormatLogMessage("Task ID", strconv.Itoa(taskId), "Result", strconv.Itoa(int(t.Result)), "Description", t.Description()))
+	case packets.CountPrimesTaskType:
+		s.Logger.Info(logger.FormatLogMessage("Task ID", strconv.Itoa(taskId), "Result", strconv.Itoa(int(t.IntResult)), "Description", t.Description()))
+	default:
+		s.Logger.Warning("msg", "Unknown Task Type")
+	}
 }

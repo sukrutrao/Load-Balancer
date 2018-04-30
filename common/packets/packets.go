@@ -15,6 +15,7 @@ import (
 
 // Types
 type PacketType uint8
+type TaskType uint8
 type Status int8
 
 const (
@@ -35,6 +36,12 @@ const (
 	TaskStatusRequest
 	TaskStatusResponse
 	PacketTypeEnd
+)
+
+// Task Type IDs
+const (
+	FibonacciTaskType TaskType = iota
+	CountPrimesTaskType
 )
 
 // Status codes
@@ -103,6 +110,7 @@ type BroadcastConnectResponse struct {
 	Port        uint16
 	LoadReqPort uint16
 	ReqSendPort uint16
+	ReqRecvPort uint16
 }
 
 type LoadRequestPacket struct {
@@ -177,7 +185,7 @@ func CreatePacketTransmit(packet interface{}, packetType PacketType) PacketTrans
 
 type TaskRequestPacket struct {
 	TaskId int
-	Task   string // TODO - change this
+	Task   TaskPacket // TODO - change this
 	Load   int
 }
 
@@ -188,7 +196,7 @@ type TaskRequestResponsePacket struct {
 
 type TaskResultResponsePacket struct {
 	TaskId     int
-	Result     string // TODO - change this
+	Result     TaskPacket // TODO - change this
 	TaskStatus Status
 }
 
@@ -204,4 +212,23 @@ type TaskStatusResponsePacket struct {
 // TODO - this should be in slave.go
 type TaskResult struct {
 	Result string
+}
+
+type TaskPacket struct {
+	TaskTypeID TaskType
+	N          int
+	Result     uint64
+	IntResult  int
+	Close      chan struct{}
+}
+
+func (t *TaskPacket) Description() string {
+	switch t.TaskTypeID {
+	case FibonacciTaskType:
+		return "Task to find Nth fibonacci number"
+	case CountPrimesTaskType:
+		return "Task to find the number of primes <= N"
+	default:
+		return "Unknown task type"
+	}
 }

@@ -14,6 +14,7 @@ var (
 const (
 	MasterBroadcastPort uint16 = 3000
 	HTTPServerPort      uint16 = 4242
+	MetricServerPort    uint16 = 0
 )
 
 type PacketType int8
@@ -28,7 +29,7 @@ const (
 	LoadRequestInterval                          = 5 * time.Second
 	GarbageCollectionInterval                    = 5 * time.Second
 	TaskInterval                                 = 5 * time.Second
-	ReceiveTimeout                               = 5 * time.Second
+	ReceiveTimeout                               = 10 * time.Second
 
 	// SlaveReceiveTimeout should be bigger than LoadRequestInterval.
 	SlaveReceiveTimeout          = 10 * time.Second
