@@ -1,7 +1,7 @@
 package master
 
 import (
-	// "fmt"
+	//	"fmt"
 	"net"
 	// "os"
 	// "os/signal"
@@ -92,7 +92,7 @@ func (m *Master) Run() {
 	// time.Sleep(5 * time.Second)
 	// m.Logger.Info(logger.FormatLogMessage("msg", "Starting Tasks"))
 	// for i := 0; i < 10; i++ {
-	// 	t := packets.TaskPacket{TaskTypeID: packets.FibonacciTaskType, N: i + 1, Close: make(chan struct{})}
+	// 	t := packets.TaskPacket{TaskTypeID: packets.CountPrimesTaskType, N: i + 1, Close: make(chan struct{})}
 	// 	fmt.Println(i)
 	// 	m.assignNewTask(&t, i+1)
 	// 	<-t.Close
