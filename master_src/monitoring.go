@@ -45,7 +45,6 @@ func (mo *Monitor) StartAcceptingRequests(packetChan chan<- monitorTcpData) erro
 				end = true
 			default:
 				var buf [2048]byte
-				// TODO: add timeout
 				n, err := mo.conn.Read(buf[0:])
 				mo.logger.Info(logger.FormatLogMessage("msg", "Monitor request"))
 				if err != nil {

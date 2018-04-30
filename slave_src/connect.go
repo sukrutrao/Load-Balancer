@@ -19,9 +19,6 @@ import (
 
 func (s *Slave) connect() error {
 
-	// TODO: store the ip of the master
-
-	// TODO: create a TCP connection for info and requests.
 	err := s.initListeners()
 	utility.CheckFatal(err, s.Logger)
 
@@ -56,7 +53,6 @@ func (s *Slave) connect() error {
 		utility.CheckFatal(err, s.Logger)
 
 		var buf [2048]byte
-		// TODO: add timeout
 		connRecv.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 		n, _, err := connRecv.ReadFromUDP(buf[:])
 		if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
@@ -148,7 +144,6 @@ func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData
 			end = true
 		default:
 			var buf [2048]byte
-			// TODO: add timeout
 			conn.SetReadDeadline(time.Now().Add(constants.SlaveReceiveTimeout))
 			n, err := conn.Read(buf[0:])
 			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
@@ -195,7 +190,6 @@ func (s *Slave) initLoadListener() error {
 
 func (s *Slave) loadListenManager(ln net.Listener) {
 
-	// TODO: handle error in accept
 	ln.(*net.TCPListener).SetDeadline(time.Now().Add(constants.SlaveConnectionAcceptTimeout))
 	conn, _ := ln.Accept()
 
@@ -309,7 +303,6 @@ func (s *Slave) initReqListener() error {
 
 func (s *Slave) reqListenManager(lnSend net.Listener, lnRecv net.Listener) {
 
-	// TODO: handle error in accept
 	var connSend, connRecv net.Conn
 
 	wc := make(chan struct{})
@@ -364,10 +357,6 @@ func (s *Slave) reqListener(packetChan <-chan tcpData) {
 		}
 
 		switch packetType {
-		// TODO: call functions from Sukrut
-		// Structure
-		// case packets.ThePacketType:
-		// Get packet from bytes and call appropriate function.
 		case packets.TaskRequest:
 			var p packets.TaskRequestPacket
 			err := packets.DecodePacket(packet.buf[:packet.n], &p)

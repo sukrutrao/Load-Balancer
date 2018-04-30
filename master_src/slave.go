@@ -107,15 +107,12 @@ func (s *Slave) loadRecvAndUpdater(conn net.Conn) {
 			end = true
 		default:
 			var buf [2048]byte
-			// TODO: add timeout
 			conn.SetReadDeadline(time.Now().Add(constants.ReceiveTimeout))
 			n, err := conn.Read(buf[0:])
 			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {
 				continue
 			} else if err != nil {
-				// s.Logger.Error(logger.FormatLogMessage("msg", "Error in reading from TCP", "err", err.Error()))
 				if err == io.EOF {
-					// TODO: remove myself from slavepool
 					s.Logger.Warning(logger.FormatLogMessage("msg", "Closing a slave (load handler)", "slave_ip", s.ip,
 						"slave_id", strconv.Itoa(int(s.id))))
 					select {
@@ -201,7 +198,6 @@ func (s *Slave) collectIncomingRequests(conn net.Conn, packetChan chan<- tcpData
 			end = true
 		default:
 			var buf [2048]byte
-			// TODO: add timeout
 			conn.SetReadDeadline(time.Now().Add(constants.SlaveReceiveTimeout))
 			n, err := conn.Read(buf[0:])
 			if nerr, ok := err.(net.Error); ok && nerr.Timeout() {

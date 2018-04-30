@@ -54,9 +54,6 @@ var LoadFunctions map[TaskType]func(int) uint64 = map[TaskType]func(int) uint64{
 }
 
 // Status codes
-// TODO can we extend this for responses on whether to accept a task?
-// would give it finer granularity
-// specify an estimate when the slave might be free, so the master can query again?
 const (
 	Complete Status = iota
 	Incomplete
@@ -195,7 +192,7 @@ func CreatePacketTransmit(packet interface{}, packetType PacketType) PacketTrans
 
 type TaskRequestPacket struct {
 	TaskId int
-	Task   TaskPacket // TODO - change this
+	Task   TaskPacket
 	Load   uint64
 }
 
@@ -206,7 +203,7 @@ type TaskRequestResponsePacket struct {
 
 type TaskResultResponsePacket struct {
 	TaskId     int
-	Result     TaskPacket // TODO - change this
+	Result     TaskPacket
 	TaskStatus Status
 }
 
@@ -219,7 +216,6 @@ type TaskStatusResponsePacket struct {
 	TaskStatus Status // from status constants in constants.go
 }
 
-// TODO - this should be in slave.go
 type TaskResult struct {
 	Result string
 }

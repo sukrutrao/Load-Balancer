@@ -22,7 +22,7 @@ func (m *Master) requestTaskStatusPacket(t *MasterTask) packets.TaskStatusReques
 
 // receives task status response, does not do anything right now
 func (s *Slave) handleTaskStatusResponse(packet packets.TaskStatusResponsePacket) {
-	// TODO - what do you do once you get the status?
+	s.Logger.Info(logger.FormatLogMessage("msg", "Task status", "task_id", strconv.Itoa(int(packet.TaskId)), "status", strconv.Itoa(int(packet.TaskStatus))))
 }
 
 func (s *Slave) handleTaskRequestResponse(packet packets.TaskRequestResponsePacket) {
@@ -35,10 +35,6 @@ func (s *Slave) handleTaskRequestResponse(packet packets.TaskRequestResponsePack
 
 // recieves result of task from slave and displays it
 func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
-	// resultPacket, ok := packet.(packets.TaskResultResponsePacket)
-	// if !ok {
-	// 	// TODO - handle error
-	// }
 	t := packet.Result
 	switch t.TaskTypeID {
 	case packets.FibonacciTaskType:
@@ -67,7 +63,6 @@ func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
 		s.Logger.Info(logger.FormatLogMessage("msg", "Unknown Task Type"))
 	}
 
-	// TODO do something more meaningful
 }
 
 // takes task string and load and creates a task object
@@ -83,14 +78,14 @@ func (m *Master) createTask(task *packets.TaskPacket, load uint64) *MasterTask {
 	GlobalTasks[taskId] = t
 	GlobalTasksMtx.Unlock()
 	m.lastTaskId += 1
-	return &t // TODO - is this safe?
+	return &t
 }
 
 // takes a task, finds which slave to assign to, assigns it in task packet, and returns slave index
 func (m *Master) assignTask(t *MasterTask) (*Slave, error) {
-	slaveAssigned, err := m.loadBalancer.assignTask(t.Load) // m.slavePool.slaves[0] // TODO Fix this based on algorithm for load balancing
+	slaveAssigned, err := m.loadBalancer.assignTask(t.Load)
 	if err != nil {
-		m.Logger.Error(logger.FormatLogMessage("err", "Assign Task Failed, Handle Error TODO", "error", err.Error()))
+		m.Logger.Error(logger.FormatLogMessage("err", "Assign Task Failed", "err", err.Error()))
 		return nil, errors.New("Assign Task Failed")
 	}
 	t.AssignedTo = slaveAssigned

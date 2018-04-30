@@ -22,7 +22,6 @@ func (sp *SlavePool) NumSlaves() int {
 }
 
 func (sp *SlavePool) AddSlave(slave *Slave) {
-	// TODO: make connection with slave over the listeners.
 	slave.Logger = sp.Logger
 	slave.InitConnections()
 	slave.InitDS()

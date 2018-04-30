@@ -256,12 +256,8 @@ func (m *Master) assignNewTask(task *packets.TaskPacket, load uint64) error {
 
 	m.Logger.Info(logger.FormatLogMessage("msg", "Assigned Task", "Task", task.Description(), "Slave", strconv.Itoa(int(s.id))))
 	p := m.assignTaskPacket(t)
-	pt := packets.CreatePacketTransmit(p, packets.TaskRequest) // TODO - fix this
+	pt := packets.CreatePacketTransmit(p, packets.TaskRequest)
 	s.tasksUndertaken = append(s.tasksUndertaken, t.TaskId)
 	s.sendChan <- pt
-	//	var packetType packets.TaskRequestPacket
-	//	s.sendChan <- packetType // TODO - this could cause issues, packaging with pt (above) would be better
 	return nil
 }
-
-// TODO: regularly send info request to all slaves.
