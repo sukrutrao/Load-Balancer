@@ -52,6 +52,17 @@ func (s *Slave) handleTaskResult(packet packets.TaskResultResponsePacket) {
 			close(orgTask.Task.Close)
 		}
 		s.Logger.Info(logger.FormatLogMessage("Task ID completed", strconv.Itoa(int(packet.TaskId)), "Result", strconv.Itoa(int(t.Result))))
+	case packets.CountPrimesTaskType:
+		GlobalTasksMtx.RLock()
+		orgTask := GlobalTasks[packet.TaskId]
+		GlobalTasksMtx.RUnlock()
+		orgTask.Task.Result = t.Result
+		select {
+		case <-orgTask.Task.Close:
+		default:
+			close(orgTask.Task.Close)
+		}
+		s.Logger.Info(logger.FormatLogMessage("Task ID completed", strconv.Itoa(int(packet.TaskId)), "Result", strconv.Itoa(int(t.IntResult))))
 	default:
 		s.Logger.Info(logger.FormatLogMessage("msg", "Unknown Task Type"))
 	}

@@ -1,7 +1,8 @@
 package slave
 
 import (
-	"math"
+	// "math"
+	//	"fmt"
 
 	"github.com/GoodDeeds/load-balancer/common/logger"
 	"github.com/GoodDeeds/load-balancer/common/packets"
@@ -49,7 +50,7 @@ func countPrimes(N int) int {
 	count := 0
 	for i := 2; i <= N; i++ {
 		isPrime := true
-		for j := 2; j < int(math.Sqrt(float64(i))); j++ {
+		for j := 2; j < i; j++ {
 			if i%j == 0 {
 				isPrime = false
 				break
@@ -59,5 +60,6 @@ func countPrimes(N int) int {
 			count++
 		}
 	}
+	//	fmt.Println(count)
 	return count
 }
