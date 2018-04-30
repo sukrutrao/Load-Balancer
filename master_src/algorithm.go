@@ -4,37 +4,21 @@ import (
 	"errors"
 )
 
-// import (
-// 	"github.com/GoodDeeds/load-balancer/master_src"
-// )
-
 type LoadBalancerInterface interface {
-	// addSlave(slave *slave.Slave) (*Slave, error)
-	// removeSlave(id int) error
 	assignTask(load uint64) (*Slave, error)
-	// may need more functions for more specialized kind of assignments
 }
 
 type LoadBalancerBase struct {
 	slavePool *SlavePool
 }
 
-// func (l *LoadBalancerBase) addSlave(slave *Slave) (*Slave, error) {
-// 	currentLoad := slave.currentLoad
-// 	maxLoad := slave.maxLoad
-// 	s := Slave{SlaveId: len(l.Slaves), currentLoad: currentLoad, maxLoad: maxLoad, SlaveObject: slave}
-// 	// TODO check for errors
-// 	l.Slaves[s.SlaveId] = s
-// 	return s, nil
-// }
+type FirstAvailable struct {
+	*LoadBalancerBase
+}
 
-// func (l *LoadBalancerBase) removeSlave(id int) error {
-// 	delete(l.Slaves, id) // TODO - any errors? maybe not
-// 	return nil
-// }
-
-// TODO - I am not sure if all functions need to be implemented, so a dummy
-func (l *LoadBalancerBase) assignTask(load uint64) (*Slave, error) {
+func (l *FirstAvailable) assignTask(load uint64) (*Slave, error) {
+	l.slavePool.mtx.RLock()
+	defer l.slavePool.mtx.RUnlock()
 	for i := range l.slavePool.slaves {
 		if l.slavePool.slaves[i].currentLoad+load <= l.slavePool.slaves[i].maxLoad {
 			l.slavePool.slaves[i].currentLoad += load
@@ -42,4 +26,90 @@ func (l *LoadBalancerBase) assignTask(load uint64) (*Slave, error) {
 		}
 	}
 	return nil, errors.New("No Slave can currently take this load")
+}
+
+type RoundRobin struct {
+	*LoadBalancerBase
+	lastAssigned int
+}
+
+func (r *RoundRobin) assignTask(load uint64) (*Slave, error) {
+	r.slavePool.mtx.RLock()
+	defer r.slavePool.mtx.RUnlock()
+
+	if len(r.slavePool.slaves) == 0 {
+		return nil, errors.New("No Slaves available")
+	}
+	if len(r.slavePool.slaves) == 1 {
+		if r.slavePool.slaves[0].currentLoad+load <= r.slavePool.slaves[0].maxLoad {
+			r.slavePool.slaves[0].currentLoad += load
+			r.lastAssigned = 0
+			return r.slavePool.slaves[0], nil
+		}
+	}
+	nextIdTry := (r.lastAssigned + 1) % len(r.slavePool.slaves)
+	if r.slavePool.slaves[nextIdTry].currentLoad+load <= r.slavePool.slaves[nextIdTry].maxLoad {
+		r.slavePool.slaves[nextIdTry].currentLoad += load
+		r.lastAssigned = nextIdTry
+		return r.slavePool.slaves[nextIdTry], nil
+	}
+	for id := (nextIdTry + 1) % len(r.slavePool.slaves); id != nextIdTry; id = (id + 1) % len(r.slavePool.slaves) {
+		if r.slavePool.slaves[id].currentLoad+load <= r.slavePool.slaves[id].maxLoad {
+			r.slavePool.slaves[id].currentLoad += load
+			return r.slavePool.slaves[id], nil
+		}
+	}
+	return nil, errors.New("No Slaves available for this load")
+}
+
+type LeastDifference struct {
+	*LoadBalancerBase
+}
+
+func (l *LeastDifference) assignTask(load uint64) (*Slave, error) {
+	l.slavePool.mtx.RLock()
+	defer l.slavePool.mtx.RUnlock()
+
+	if len(l.slavePool.slaves) == 0 {
+		return nil, errors.New("No Slaves available")
+	}
+	minDifference := l.slavePool.slaves[0].maxLoad - l.slavePool.slaves[0].currentLoad
+	minId := -1
+	for id := 0; id < len(l.slavePool.slaves); id++ {
+		if l.slavePool.slaves[id].maxLoad-l.slavePool.slaves[id].currentLoad <= minDifference && l.slavePool.slaves[id].maxLoad-l.slavePool.slaves[id].currentLoad >= load {
+			minDifference = l.slavePool.slaves[id].currentLoad
+			minId = id
+		}
+	}
+	if minId >= 0 {
+		l.slavePool.slaves[minId].currentLoad += load // TODO do we need this?
+		return l.slavePool.slaves[minId], nil
+	}
+	return nil, errors.New("No Slaves available for this load")
+}
+
+type LeastLoad struct {
+	*LoadBalancerBase
+}
+
+func (l *LeastLoad) assignTask(load uint64) (*Slave, error) {
+	l.slavePool.mtx.RLock()
+	defer l.slavePool.mtx.RUnlock()
+
+	if len(l.slavePool.slaves) == 0 {
+		return nil, errors.New("No Slaves available")
+	}
+	minLoad := l.slavePool.slaves[0].currentLoad
+	minId := -1
+	for id := 0; id < len(l.slavePool.slaves); id++ {
+		if l.slavePool.slaves[id].currentLoad <= minLoad && l.slavePool.slaves[id].maxLoad >= load {
+			minLoad = l.slavePool.slaves[id].currentLoad
+			minId = id
+		}
+	}
+	if minId >= 0 {
+		l.slavePool.slaves[minId].currentLoad += load // TODO do we need this?
+		return l.slavePool.slaves[minId], nil
+	}
+	return nil, errors.New("No Slaves available for this load")
 }
