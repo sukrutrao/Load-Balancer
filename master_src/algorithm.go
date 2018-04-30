@@ -21,7 +21,6 @@ func (l *FirstAvailable) assignTask(load uint64) (*Slave, error) {
 	defer l.slavePool.mtx.RUnlock()
 	for i := range l.slavePool.slaves {
 		if l.slavePool.slaves[i].currentLoad+load <= l.slavePool.slaves[i].maxLoad {
-			l.slavePool.slaves[i].currentLoad += load
 			return l.slavePool.slaves[i], nil
 		}
 	}
@@ -42,20 +41,17 @@ func (r *RoundRobin) assignTask(load uint64) (*Slave, error) {
 	}
 	if len(r.slavePool.slaves) == 1 {
 		if r.slavePool.slaves[0].currentLoad+load <= r.slavePool.slaves[0].maxLoad {
-			r.slavePool.slaves[0].currentLoad += load
 			r.lastAssigned = 0
 			return r.slavePool.slaves[0], nil
 		}
 	}
 	nextIdTry := (r.lastAssigned + 1) % len(r.slavePool.slaves)
 	if r.slavePool.slaves[nextIdTry].currentLoad+load <= r.slavePool.slaves[nextIdTry].maxLoad {
-		r.slavePool.slaves[nextIdTry].currentLoad += load
 		r.lastAssigned = nextIdTry
 		return r.slavePool.slaves[nextIdTry], nil
 	}
 	for id := (nextIdTry + 1) % len(r.slavePool.slaves); id != nextIdTry; id = (id + 1) % len(r.slavePool.slaves) {
 		if r.slavePool.slaves[id].currentLoad+load <= r.slavePool.slaves[id].maxLoad {
-			r.slavePool.slaves[id].currentLoad += load
 			return r.slavePool.slaves[id], nil
 		}
 	}
@@ -82,7 +78,6 @@ func (l *LeastDifference) assignTask(load uint64) (*Slave, error) {
 		}
 	}
 	if minId >= 0 {
-		l.slavePool.slaves[minId].currentLoad += load // TODO do we need this?
 		return l.slavePool.slaves[minId], nil
 	}
 	return nil, errors.New("No Slaves available for this load")
@@ -108,7 +103,6 @@ func (l *LeastLoad) assignTask(load uint64) (*Slave, error) {
 		}
 	}
 	if minId >= 0 {
-		l.slavePool.slaves[minId].currentLoad += load // TODO do we need this?
 		return l.slavePool.slaves[minId], nil
 	}
 	return nil, errors.New("No Slaves available for this load")
